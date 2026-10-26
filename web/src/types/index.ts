@@ -194,28 +194,53 @@ export interface CriticalCase {
 
 export interface Invoice {
  id: string;
- orderId: string;
+ orderId?: string;
+ orderIds?: string[];
  partnerId: string;
  partnerName: string;
+ partnerCode?: string;
+ partnerCategory?: string;
  invoiceNumber: string;
+ billingPeriod?: string;
+ periodStart?: string;
+ periodEnd?: string;
  items: InvoiceItem[];
+ garmentCount?: number;
  subtotal: number;
  gstRate: number;
  gstAmount: number;
  total: number;
  status: InvoiceStatus;
+ gstNumber?: string;
+ bankAccount?: {
+  accountNumber: string;
+  ifscCode: string;
+  accountHolder: string;
+ };
+ paymentDetails?: {
+  method?: string;
+  reference?: string;
+  paidAt?: string;
+  paidBy?: string;
+  notes?: string;
+ };
  notes?: string;
  approvedBy?: string;
- approvedAt?: Date;
+ approvedAt?: Date | string;
  createdAt: string;
  updatedAt: string;
 }
 
 export interface InvoiceItem {
+ serviceId?: string;
+ serviceName?: string;
  description: string;
+ category?: string;
  quantity: number;
  unitPrice: number;
  amount: number;
+ garmentIds?: string[];
+ orderIds?: string[];
 }
 
 export interface Payment {
