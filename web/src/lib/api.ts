@@ -40,7 +40,7 @@ export async function callApi<T>(path: string, options?: RequestInit): Promise<T
 }
 
 export function isApiConfigured(): boolean {
- return !!localStorage.getItem('apiBaseUrl');
+ return true;
 }
 
 // ===== ORDERS =====

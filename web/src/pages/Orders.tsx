@@ -251,9 +251,6 @@ function deriveStatus(order: Order, subs: SubOrder[]): string {
  return order.status || 'RECEIVED';
 }
 
-function isApiConfigured(): boolean {
- return !localStorage.getItem('apiBaseUrl');
-}
 
 export default function OrdersPage() {
  const { user } = useAuth();
@@ -535,41 +532,48 @@ export default function OrdersPage() {
    }
 
    // Read orders from Firestore (source of truth for critical data)
+   let finalUnique: Order[] = [];
    try {
     const fsSnap = await getDocs(collection(db, 'orders'));
     const fsOrders = fsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Order));
-    const fsMap = new Map(fsOrders.map(f => [String(f.orderNumber || f.orderId || f.id), f]));
-    const mergedList = (unique.length > 0 ? unique : fsOrders).map(o => {
-     const docId = String(o.orderNumber || o.orderId || o.id);
-     const fs = fsMap.get(docId) || fsOrders.find(f => f.id === o.id || f.orderId === o.orderId || f.orderNumber === o.orderNumber);
-     if (fs) {
-      return {
-       ...o,
-       ...fs,
-       status: fs.status || o.status,
-       qcStatus: fs.qcStatus || o.qcStatus,
-       deliveryStatus: fs.deliveryStatus || (fs as any).deliveryStatus || o.deliveryStatus,
-       deliveryInitiatedAt: fs.deliveryInitiatedAt || (fs as any).deliveryInitiatedAt,
-       deliveryInitiatedBy: fs.deliveryInitiatedBy || (fs as any).deliveryInitiatedBy,
-       garments: fs.garments || o.garments,
-      };
-     }
-     return o;
+    const orderMap = new Map<string, Order>();
+
+    // 1. Add all Firestore orders
+    fsOrders.forEach(f => {
+     const docId = String(f.orderNumber || f.orderId || f.id);
+     orderMap.set(docId, { ...f, id: docId, orderId: docId });
     });
-    const source = mergedList;
-    const finalUnique = (source || []).reduce<Order[]>((acc, o) => {
+
+    // 2. Add / merge API orders
+    (unique || []).forEach(o => {
      const docId = String(o.orderNumber || o.orderId || o.id);
-     if (acc.find(x => x.id === docId)) return acc;
-     return [...acc, { ...o, id: docId, orderId: docId } as Order];
-    }, []);
+     const existing = orderMap.get(docId);
+     if (existing) {
+      orderMap.set(docId, {
+       ...o,
+       ...existing,
+       status: existing.status || o.status,
+       qcStatus: existing.qcStatus || o.qcStatus,
+       deliveryStatus: existing.deliveryStatus || (existing as any).deliveryStatus || o.deliveryStatus,
+       deliveryInitiatedAt: existing.deliveryInitiatedAt || (existing as any).deliveryInitiatedAt,
+       deliveryInitiatedBy: existing.deliveryInitiatedBy || (existing as any).deliveryInitiatedBy,
+       garments: existing.garments || o.garments,
+      });
+     } else {
+      orderMap.set(docId, { ...o, id: docId, orderId: docId });
+     }
+    });
+
+    finalUnique = Array.from(orderMap.values());
     setOrders(finalUnique);
    } catch (e) {
+    finalUnique = unique;
     setOrders(unique);
    }
    const [allPartners, subMap] = await Promise.all([loadPartners(), loadSubOrders()]);
    setPartnersList(allPartners);
    try {
-    const updatedMap = await autoAssignOrders(unique, allPartners, subMap);
+    const updatedMap = await autoAssignOrders(finalUnique, allPartners, subMap);
     setSubOrdersByOrder(updatedMap);
    } catch (e) { console.error('autoAssignOrders failed:', e); setSubOrdersByOrder(subMap); }
    try {
@@ -587,7 +591,6 @@ export default function OrdersPage() {
  }
 
  useEffect(() => {
-  if (!isApiConfigured()) { setLoading(false); return; }
   loadOrders();
  }, []);
 

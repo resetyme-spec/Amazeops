@@ -6,6 +6,21 @@ const app = express();
 const PORT = 3002;
 const API_KEY = 'amaze-fab-super-admin-key-2026';
 
+const path = require('path');
+
+// Connect to Cloud Firestore for real-time order sync
+let db = null;
+try {
+ const admin = require(path.resolve(__dirname, '../../functions/node_modules/firebase-admin'));
+ if (!admin.apps.length) {
+  admin.initializeApp({ projectId: 'amaze-ops' });
+ }
+ db = admin.firestore();
+ console.log('[Dummy App] Successfully connected to live Cloud Firestore (amaze-ops)!');
+} catch (e) {
+ console.warn('[Dummy App] Firestore not loaded:', e.message);
+}
+
 // In-memory storage
 let orders = [];
 let services = [
@@ -41,10 +56,11 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
-// API key check
+// API key check - accept both production and dummy keys
 function checkApiKey(req, res, next) {
  const key = req.headers['x-api-key'];
- if (key !== API_KEY) {
+ const validKeys = ['amaze-fab-super-admin-key-2026', 'dummy-app-key-2025'];
+ if (!validKeys.includes(key)) {
   return res.status(401).json({ error: 'Invalid API key' });
  }
  next();
@@ -52,23 +68,42 @@ function checkApiKey(req, res, next) {
 
 // Serve the order creation form
 app.get('/', (req, res) => {
- res.sendFile(require('path').join(__dirname, 'public', 'index.html'));
+ res.sendFile(require('path').join(__dirname, '..', 'public', 'index.html'));
 });
 
-// API: List all orders
-app.get('/api/orders', checkApiKey, (req, res) => {
+// API: List all orders (from Firestore if available, otherwise in-memory)
+app.get('/api/orders', checkApiKey, async (req, res) => {
+ if (db) {
+  try {
+   const snapshot = await db.collection('orders').get();
+   const firestoreOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+   if (firestoreOrders.length > 0) {
+    return res.json({ orders: firestoreOrders });
+   }
+  } catch (err) {
+   console.warn('[Dummy App] Error fetching orders from Firestore:', err.message);
+  }
+ }
  res.json({ orders });
 });
 
 // API: Get one order
-app.get('/api/orders/:id', checkApiKey, (req, res) => {
+app.get('/api/orders/:id', checkApiKey, async (req, res) => {
+ if (db) {
+  try {
+   const doc = await db.collection('orders').doc(req.params.id).get();
+   if (doc.exists) {
+    return res.json({ order: { id: doc.id, ...doc.data() } });
+   }
+  } catch (err) {}
+ }
  const order = orders.find(o => o.id === req.params.id || o.orderId === req.params.id);
  if (!order) return res.status(404).json({ error: 'Order not found' });
  res.json({ order });
 });
 
 // API: Create order
-app.post('/api/orders', checkApiKey, (req, res) => {
+app.post('/api/orders', checkApiKey, async (req, res) => {
  const data = req.body;
  const orderId = data.order_no || data.orderNo || `ORD-${String(nextId).padStart(3, '0')}`;
  if (!data.order_no && !data.orderNo) nextId++;
@@ -108,6 +143,17 @@ app.post('/api/orders', checkApiKey, (req, res) => {
  };
 
  orders.unshift(order);
+
+ // Save directly to Cloud Firestore so it reflects on Admin & Partner portals
+ if (db) {
+  try {
+   await db.collection('orders').doc(orderId).set(order, { merge: true });
+   console.log(`[Dummy App -> Firestore] Order ${orderId} synced to Cloud Firestore successfully!`);
+  } catch (err) {
+   console.error(`[Dummy App -> Firestore Error]`, err.message);
+  }
+ }
+
  res.status(201).json({ success: true, orderId, order });
 });
 

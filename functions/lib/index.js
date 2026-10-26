@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.admin_instance = exports.db_instance = exports.weeklyPartnerSummary = exports.dailyDeliveryReminder = exports.paymentOnCreate = exports.invoiceOnUpdate = exports.invoiceOnCreate = exports.qcRecordOnCreate = exports.subOrderOnUpdate = exports.subOrderOnCreate = exports.criticalCaseOnUpdate = exports.criticalCaseOnCreate = exports.garmentOnUpdate = exports.garmentOnCreate = exports.orderOnUpdate = exports.orderOnCreate = exports.apiInitializeFirestore = exports.apiRecordPayment = exports.apiApproveInvoice = exports.apiCreateInvoice = exports.apiSubmitQCResult = exports.apiCreateCriticalCase = exports.apiDeleteService = exports.apiUpdateService = exports.apiCreateService = exports.apiDeletePartner = exports.apiUpdatePartner = exports.apiCreatePartner = exports.apiAssignGarmentsToPartner = exports.apiAddGarmentsToOrder = exports.apiCreateOrder = void 0;
+exports.admin_instance = exports.db_instance = exports.api = exports.weeklyPartnerSummary = exports.dailyDeliveryReminder = exports.paymentOnCreate = exports.invoiceOnUpdate = exports.invoiceOnCreate = exports.qcRecordOnCreate = exports.subOrderOnUpdate = exports.subOrderOnCreate = exports.criticalCaseOnUpdate = exports.criticalCaseOnCreate = exports.garmentOnUpdate = exports.garmentOnCreate = exports.orderOnUpdate = exports.orderOnCreate = exports.apiInitializeFirestore = exports.apiRecordPayment = exports.apiApproveInvoice = exports.apiCreateInvoice = exports.apiSubmitQCResult = exports.apiCreateCriticalCase = exports.apiDeleteService = exports.apiUpdateService = exports.apiCreateService = exports.apiDeletePartner = exports.apiUpdatePartner = exports.apiCreatePartner = exports.apiAssignGarmentsToPartner = exports.apiAddGarmentsToOrder = exports.apiCreateOrder = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const orderService_1 = require("./services/orderService");
@@ -163,6 +163,93 @@ exports.weeklyPartnerSummary = functions.pubsub.schedule('0 8 * * 1').onRun(asyn
         }
     }
     return null;
+});
+// ===== PUBLIC REST API FOR EXTERNAL CUSTOMER APP =====
+const API_KEY = 'amaze-fab-super-admin-key-2026';
+exports.api = functions.https.onRequest(async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+    const key = req.headers['x-api-key'];
+    if (key !== API_KEY) {
+        res.status(401).json({ error: 'Unauthorized: Invalid x-api-key header' });
+        return;
+    }
+    const path = req.path;
+    // POST /orders or POST /api/orders
+    if (req.method === 'POST' && (path === '/orders' || path === '/api/orders' || path === '/' || path === '')) {
+        try {
+            const data = req.body || {};
+            const orderId = String(data.order_no || data.orderNo || data.orderId || `ORD-${Date.now()}`);
+            const orderPayload = {
+                id: orderId,
+                orderId,
+                orderNumber: orderId,
+                customer: {
+                    name: data.customer_name || data.customerName || 'Unknown',
+                    phone: data.customer_phone || data.customerPhone || '—',
+                    category: data.customer_category || data.customerCategory || 'RETAIL',
+                },
+                careCategory: data.care_category || data.careCategory || 'Normal',
+                status: data.status || 'RECEIVED',
+                garments: Array.isArray(data.garments) ? data.garments.map((g, i) => ({
+                    garmentId: g.garment_id_code || g.garmentId || `GAR-${orderId}-${i + 1}`,
+                    qrCode: g.qr_code || g.qrCode || `QR-${orderId}-${i + 1}`,
+                    garmentType: g.garment_type || g.garmentType || 'Garment',
+                    category: g.category || 'OTHER',
+                    garmentCategory: g.garment_category || g.garmentCategory || g.category || 'GOLD',
+                    serviceType: g.service_type || g.serviceType || 'Standard',
+                    status: 'PENDING',
+                })) : [],
+                createdAt: data.created_at || new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            };
+            await db.collection('orders').doc(orderId).set(orderPayload, { merge: true });
+            res.status(201).json({
+                success: true,
+                orderId,
+                message: 'Order received and queued for partner assignment',
+                order: orderPayload,
+            });
+            return;
+        }
+        catch (err) {
+            res.status(500).json({ error: 'Failed to create order', details: err.message });
+            return;
+        }
+    }
+    // GET /orders/:id or GET /api/orders/:id
+    const match = path.match(/^\/?(?:api\/)?orders\/([^/]+)$/);
+    if (req.method === 'GET' && match) {
+        try {
+            const targetId = match[1];
+            let orderDoc = await db.collection('orders').doc(targetId).get();
+            if (!orderDoc.exists) {
+                const querySnap = await db.collection('orders').where('orderNumber', '==', targetId).limit(1).get();
+                if (!querySnap.empty) {
+                    orderDoc = querySnap.docs[0];
+                }
+            }
+            if (!orderDoc.exists) {
+                res.status(404).json({ error: 'Order not found' });
+                return;
+            }
+            res.status(200).json({
+                success: true,
+                order: { id: orderDoc.id, ...orderDoc.data() },
+            });
+            return;
+        }
+        catch (err) {
+            res.status(500).json({ error: 'Failed to fetch order', details: err.message });
+            return;
+        }
+    }
+    res.status(404).json({ error: 'Endpoint not found', path });
 });
 // ===== EXPORTS =====
 exports.db_instance = db;

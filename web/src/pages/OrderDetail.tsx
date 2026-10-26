@@ -285,8 +285,8 @@ export default function OrderDetail() {
   };
 
   useEffect(() => {
-    const configured = !!localStorage.getItem('apiBaseUrl') && localStorage.getItem('apiBaseUrl') !== 'http://localhost:3001';
-    setApiConfigured(configured);
+    const configured = true;
+    setApiConfigured(true);
     if (configured && orderId) {
       // Load from Firestore first — supports both order IDs and sub-order IDs
       (async () => {
@@ -836,21 +836,7 @@ export default function OrderDetail() {
 
   if (loading) return <div className="page"><div className="loading-screen"><div className="loading-spinner" /></div></div>;
 
-  if (!apiConfigured) {
-    return (
-      <div className="page">
-        <div className="page-header"><div><h1>Order Detail</h1></div></div>
-        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🔌</div>
-          <h2 style={{ marginBottom: 8 }}>API Not Connected</h2>
-          <p className="text-muted" style={{ maxWidth: 400, margin: '0 auto 24px' }}>
-            Connect your customer order system API to view order details.
-          </p>
-          <Link to="/settings" className="btn btn-primary"><Settings size={16} /> Configure API Connection</Link>
-        </div>
-      </div>
-    );
-  }
+
 
   if (!order) return <div className="page"><p className="text-muted">Order not found.</p></div>;
 
