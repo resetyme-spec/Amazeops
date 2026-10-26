@@ -1,0 +1,418 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  STAFF
+  PARTNER
+}
+
+enum CustomerCategory {
+  GOLD
+  YELLOW
+  BLUE
+}
+
+enum PartnerCategory {
+  GOLD
+  ORANGE
+  BLUE
+}
+
+enum OrderStatus {
+  PENDING_SORTING
+  SORTED
+  IN_PROCESSING
+  PARTIALLY_COMPLETED
+  COMPLETED
+  CANCELLED
+}
+
+enum SubOrderStatus {
+  ASSIGNED
+  ACCEPTED
+  IN_PROCESSING
+  COMPLETED
+}
+
+enum GarmentStatus {
+  RECEIVED
+  PENDING_SORTING
+  ASSIGNED
+  ACCEPTED
+  IN_PROCESSING
+  CRITICAL
+  SERVICE_COMPLETED
+  SENT_FOR_QC
+  QC_PENDING
+  QC_PASSED
+  QC_NOT_OK
+  REWORK
+  READY_FOR_DELIVERY
+}
+
+enum CriticalStatus {
+  OPEN
+  REVIEWED
+  RESOLVED
+}
+
+enum AdminCriticalResolution {
+  REASSIGN
+  RETAIN
+}
+
+enum QCResult {
+  PASS
+  FAIL
+}
+
+enum TransactionType {
+  EARNING
+  ADJUSTMENT_CREDIT
+  ADJUSTMENT_DEBIT
+  REVERSAL
+}
+
+enum WalletStatus {
+  AVAILABLE
+  INVOICED
+  PAID
+}
+
+enum InvoiceStatus {
+  DRAFT
+  RAISED
+  UNDER_REVIEW
+  RETURNED
+  APPROVED
+  PAYMENT_PROCESSING
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum PaymentStatus {
+  RECORDED
+  PARTIALLY_SETTLED
+  SETTLED
+  REVERSED
+}
+
+enum ExceptionStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+enum ExceptionPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SyncStatus {
+  SYNC_PENDING
+  SYNC_SUCCESS
+  SYNC_FAILED
+  SYNC_RETRYING
+  DATA_INCOMPLETE
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  phone        String?
+  partnerId    String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  partner Partner? @relation(fields: [partnerId], references: [id])
+}
+
+model Partner {
+  id            String          @id @default(uuid())
+  partnerCode   String          @unique
+  companyName   String
+  contactPerson String
+  phone         String
+  email         String
+  gstNumber     String
+  address       String
+  category      PartnerCategory
+  active        Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  users              User[]
+  partnerServices    PartnerService[]
+  partnerPricings    PartnerPricing[]
+  subOrders          PartnerSubOrder[]
+  garments           Garment[]
+  criticalCases      CriticalCase[]
+  walletTransactions WalletTransaction[]
+  invoices           Invoice[]
+  payments           Payment[]
+}
+
+model Service {
+  id           String   @id @default(uuid())
+  amazefabId   String   @unique
+  name         String
+  active       Boolean  @default(true)
+  lastSyncedAt DateTime @default(now())
+  sourceSystem String   @default("AMAZEFAB")
+
+  partnerServices PartnerService[]
+  partnerPricings PartnerPricing[]
+  garments        Garment[]
+}
+
+model PartnerService {
+  id        String  @id @default(uuid())
+  partnerId String
+  serviceId String
+  partner   Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([partnerId, serviceId])
+}
+
+model PartnerPricing {
+  id              String           @id @default(uuid())
+  partnerId       String?
+  partnerCategory PartnerCategory?
+  serviceId       String
+  price           Float
+  startDate       DateTime
+  endDate         DateTime?
+  createdAt       DateTime         @default(now())
+
+  partner Partner? @relation(fields: [partnerId], references: [id])
+  service Service  @relation(fields: [serviceId], references: [id])
+}
+
+model Order {
+  id                  String           @id @default(uuid())
+  externalOrderId     String           // AmazeFab Order ID
+  originalOrderNumber String
+  sourceSystem        String           @default("AMAZEFAB")
+  customerName        String
+  customerPhone       String
+  customerCategory    CustomerCategory
+  status              OrderStatus      @default(PENDING_SORTING)
+  totalGarments       Int              @default(0)
+  cancelledReason     String?
+  cancelledBy         String?
+  cancelledAt         DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  garments  Garment[]
+  subOrders PartnerSubOrder[]
+
+  @@unique([sourceSystem, externalOrderId])
+}
+
+model PartnerSubOrder {
+  id             String         @id @default(uuid())
+  subOrderNumber String         @unique // e.g. 1001-GPA01
+  orderId        String
+  partnerId      String
+  totalGarments  Int            @default(0)
+  completedCount Int            @default(0)
+  status         SubOrderStatus @default(ASSIGNED)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  order   Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  partner Partner   @relation(fields: [partnerId], references: [id])
+  garments Garment[]
+}
+
+model Garment {
+  id                String        @id @default(uuid())
+  amazeFabGarmentId String
+  garmentCode       String
+  qrCode            String        @unique
+  orderId           String
+  partnerSubOrderId String?
+  partnerId         String?
+  serviceId         String
+  status            GarmentStatus @default(RECEIVED)
+  instruction       String?
+  photoUrl          String?
+  appliedPrice      Float?
+  taxAmount         Float?
+  walletCredited    Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  order              Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  partnerSubOrder    PartnerSubOrder?    @relation(fields: [partnerSubOrderId], references: [id])
+  partner            Partner?            @relation(fields: [partnerId], references: [id])
+  service            Service             @relation(fields: [serviceId], references: [id])
+  criticalCases      CriticalCase[]
+  qcRecords          QCRecord[]
+  walletTransactions WalletTransaction[]
+  scans              GarmentScan[]
+}
+
+model GarmentScan {
+  id              String   @id @default(uuid())
+  garmentId       String
+  scannedByUserId String
+  partnerId       String?
+  scanType        String   // RECEIVING, QC, DISPATCH
+  status          String   // VALID, MISSING, UNEXPECTED, WRONG_PARTNER
+  scannedAt       DateTime @default(now())
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+}
+
+model CriticalCase {
+  id               String                  @id @default(uuid())
+  garmentId        String
+  partnerId        String
+  status           CriticalStatus          @default(OPEN)
+  issueDescription String
+  photoUrl         String?
+  adminResolution  AdminCriticalResolution?
+  newPartnerId     String?
+  newInstruction   String?
+  createdByUserId  String
+  resolvedByUserId String?
+  createdAt        DateTime                @default(now())
+  resolvedAt       DateTime?
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+  partner Partner @relation(fields: [partnerId], references: [id])
+}
+
+model QCRecord {
+  id              String   @id @default(uuid())
+  garmentId       String
+  partnerId       String
+  reviewerUserId  String
+  result          QCResult
+  reason          String?
+  instruction     String?
+  photoUrl        String?
+  reworkRequired  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  garment Garment @relation(fields: [garmentId], references: [id], onDelete: Cascade)
+}
+
+model WalletTransaction {
+  id              String          @id @default(uuid())
+  partnerId       String
+  garmentId       String
+  orderId         String
+  subOrderId      String?
+  serviceId       String
+  appliedPrice    Float
+  taxAmount       Float           @default(0)
+  type            TransactionType @default(EARNING)
+  status          WalletStatus    @default(AVAILABLE)
+  invoiceId       String?
+  reason          String?
+  createdAt       DateTime        @default(now())
+
+  partner Partner  @relation(fields: [partnerId], references: [id])
+  garment Garment  @relation(fields: [garmentId], references: [id])
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+}
+
+model Invoice {
+  id                 String        @id @default(uuid())
+  invoiceNumber      String        @unique
+  partnerId          String
+  billingPeriodStart DateTime
+  billingPeriodEnd   DateTime
+  subtotal           Float
+  gstRate            Float         @default(18.0) // configurable GST percentage
+  cgst               Float
+  sgst               Float
+  igst               Float
+  totalTax           Float
+  grandTotal         Float
+  paidAmount         Float         @default(0)
+  status             InvoiceStatus @default(RAISED)
+  rejectionReason    String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  partner            Partner             @relation(fields: [partnerId], references: [id])
+  walletTransactions WalletTransaction[]
+  payments           Payment[]
+}
+
+model Payment {
+  id                   String        @id @default(uuid())
+  invoiceId            String
+  partnerId            String
+  paymentDate          DateTime      @default(now())
+  amount               Float
+  paymentMode          String        // BANK_TRANSFER, UPI, CHEQUE, CASH
+  transactionReference String
+  remarks              String?
+  recordedByUserId     String
+  status               PaymentStatus @default(SETTLED)
+  createdAt            DateTime      @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  partner Partner @relation(fields: [partnerId], references: [id])
+}
+
+model Exception {
+  id            String            @id @default(uuid())
+  type          String            // MISSING_GARMENT, UNEXPECTED_GARMENT, WRONG_QR, API_SYNC_FAILED, etc.
+  priority      ExceptionPriority @default(MEDIUM)
+  orderId       String?
+  garmentId     String?
+  partnerId     String?
+  description   String
+  status        ExceptionStatus   @default(OPEN)
+  resolution    String?
+  createdByUserId String
+  resolvedByUserId String?
+  createdAt     DateTime          @default(now())
+  resolvedAt    DateTime?
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String
+  action      String
+  entityName  String
+  entityId    String
+  beforeJson  String?
+  afterJson   String?
+  reason      String?
+  timestamp   DateTime @default(now())
+}
+
+model IntegrationSyncLog {
+  id              String     @id @default(uuid())
+  externalOrderId String?
+  syncType        String     // ORDER_IMPORT, SERVICE_SYNC, ORDER_UPDATE, ORDER_CANCEL
+  status          SyncStatus @default(SYNC_PENDING)
+  errorMessage    String?
+  retryCount      Int        @default(0)
+  payloadJson     String?
+  lastAttemptAt   DateTime   @default(now())
+  createdAt       DateTime   @default(now())
+}

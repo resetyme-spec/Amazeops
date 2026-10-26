@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AmazeFab Marketplace — Brain Map</title>
+<style>
+ :root {
+ --bg: #f5f6fa; --surface: #ffffff; --surface2: #eef0f5;
+ --border: #d1d5db; --text: #1a1d27; --text2: #4b5563; --text3: #9ca3b0;
+ --green: #16a34a; --green-bg: rgba(34,197,94,0.1);
+ --yellow: #ca8a04; --yellow-bg: rgba(234,179,8,0.15);
+ --red: #dc2626; --red-bg: rgba(239,68,68,0.08);
+ --blue: #2563eb; --blue-bg: rgba(59,130,246,0.08);
+ --purple: #9333ea; --purple-bg: rgba(168,85,247,0.08);
+ --orange: #ea580c; --orange-bg: rgba(249,115,22,0.08);
+ --cyan: #0891b2; --cyan-bg: rgba(6,182,212,0.08);
+ }
+ * { margin:0; padding:0; box-sizing:border-box; }
+ body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; min-height:100vh; }
+ .header { background:var(--surface); border-bottom:1px solid var(--border); padding:14px 20px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; flex-wrap:wrap; gap:10px; }
+ .header-left h1 { font-size:16px; font-weight:700; }
+ .header-left .sub { font-size:10px; color:var(--text2); margin-top:2px; }
+ .legend { display:flex; gap:14px; flex-wrap:wrap; }
+ .legend-item { display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text2); }
+ .legend-dot { width:9px; height:9px; border-radius:50%; }
+ .main { display:flex; height:calc(100vh - 52px); }
+ .canvas { flex:1; overflow:auto; padding:28px; }
+ .sidebar { width:340px; background:var(--surface); border-left:1px solid var(--border); overflow-y:auto; padding:18px; display:none; }
+ .sidebar.open { display:block; }
+ .sidebar-close { float:right; background:none; border:none; color:var(--text2); font-size:20px; cursor:pointer; }
+ .section { margin-bottom:36px; }
+ .section-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; color:var(--text2); margin-bottom:12px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+ .row { display:flex; align-items:center; gap:0; flex-wrap:nowrap; margin-bottom:4px; }
+ .v-arrow { display:flex; flex-direction:column; align-items:center; color:var(--text3); margin:5px 0; }
+ .v-arrow .line { width:2px; height:18px; background:var(--border); }
+ .v-arrow .head { font-size:9px; margin-top:-1px; }
+ .h-arrow { color:var(--text3); font-size:14px; padding:0 3px; flex-shrink:0; }
+ .node { padding:8px 12px; border-radius:6px; border:2px solid var(--border); background:var(--surface); font-size:11px; font-weight:500; white-space:nowrap; cursor:pointer; transition:all 0.15s; min-width:110px; text-align:center; position:relative; }
+ .node:hover { transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,0.12); }
+ .node .lbl { font-weight:600; }
+ .node .sub { font-size:9px; color:var(--text2); margin-top:2px; }
+ .node .badge { position:absolute; top:-7px; right:-7px; padding:1px 5px; border-radius:4px; font-size:9px; font-weight:700; color:#fff; }
+ .s-built { border-color:var(--green); background:var(--green-bg); } .s-built .lbl { color:var(--green); }
+ .s-partial { border-color:var(--yellow); background:var(--yellow-bg); } .s-partial .lbl { color:var(--yellow); }
+ .s-missing { border-color:var(--red); background:var(--red-bg); } .s-missing .lbl { color:var(--red); }
+ .s-external { border-color:var(--blue); background:var(--blue-bg); } .s-external .lbl { color:var(--blue); }
+ .s-locked { border-color:var(--purple); background:var(--purple-bg); } .s-locked .lbl { color:var(--purple); }
+ .s-system { border-color:var(--cyan); background:var(--cyan-bg); } .s-system .lbl { color:var(--cyan); }
+ .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-bottom:28px; }
+ .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:7px; padding:12px; text-align:center; }
+ .stat-card .num { font-size:24px; font-weight:800; }
+ .stat-card .lbl { font-size:9px; color:var(--text2); text-transform:uppercase; letter-spacing:0.5px; margin-top:3px; }
+ .branches { display:flex; gap:10px; margin-left:16px; }
+ .branch { display:flex; flex-direction:column; align-items:center; }
+ .branch-line { width:2px; height:20px; background:var(--border); }
+ .d-title { font-size:15px; font-weight:700; margin-bottom:3px; }
+ .d-type { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase; margin-bottom:10px; }
+ .d-desc { font-size:11px; color:var(--text2); line-height:1.6; margin-bottom:12px; }
+ .d-section { margin-bottom:14px; }
+ .d-section h3 { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text2); margin-bottom:5px; }
+ .d-list { list-style:none; }
+ .d-list li { padding:4px 0; font-size:11px; color:var(--text2); border-bottom:1px solid var(--border); display:flex; gap:8px; }
+ .d-list li:last-child { border-bottom:none; }
+ .d-list .k { color:var(--text); font-weight:500; min-width:90px; }
+ .sys-box { border:1.5px solid; border-radius:10px; padding:14px 18px; margin-bottom:6px; }
+ .sys-label { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:700; margin-bottom:6px; color:var(--text); }
+ .sys-items { display:flex; flex-wrap:wrap; gap:5px; }
+ .sys-item { padding:3px 9px; border-radius:4px; font-size:10px; background:var(--surface2); color:var(--text2); }
+ ::-webkit-scrollbar { width:7px; height:7px; }
+ ::-webkit-scrollbar-track { background:var(--bg); }
+ ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+ .search-bar { display:flex; align-items:center; gap:6px; background:var(--surface2); border:1px solid var(--border); border-radius:5px; padding:5px 10px; }
+ .search-bar input { background:transparent; border:none; color:var(--text); font-size:12px; outline:none; width:150px; }
+ .search-bar input::placeholder { color:var(--text3); }
+ .firebase-stack { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px; }
+ @media (max-width:900px) { .sidebar { width:100%; position:fixed; top:0; left:0; height:100vh; z-index:200; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+ <div class="header-left">
+ <div>
+ <h1>🔥 AmazeFab Marketplace — Brain Map</h1>
+ <div class="sub">E:\Amaze opsv1 · Brain v1.1.0 · Firebase Architecture · 2026-09-15 · Click any node for details</div>
+ </div>
+ </div>
+ <div class="legend">
+ <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Done</div>
+ <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> Partial</div>
+ <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Missing</div>
+ <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div> External</div>
+ <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div> Locked Rule</div>
+ <div class="legend-item"><div class="legend-dot" style="background:var(--cyan)"></div> Firebase</div>
+ </div>
+ <div class="search-bar"><span style="color:var(--text3)">🔍</span><input type="text" id="searchInput" placeholder="Filter..." oninput="filterNodes()"></div>
+</div>
+
+<div class="main">
+<div class="canvas" id="canvas">
+
+<!-- STATS -->
+<div class="stats">
+ <div class="stat-card"><div class="num" style="color:var(--cyan)">1</div><div class="lbl">Firebase Project</div></div>
+ <div class="stat-card"><div class="num" style="color:var(--cyan)">2</div><div class="lbl">Firebase Apps</div></div>
+ <div class="stat-card"><div class="num" style="color:var(--green)">8</div><div class="lbl">Cloud Functions</div></div>
+ <div class="stat-card"><div class="num" style="color:var(--green)">Schema</div><div class="lbl">Data Model Done</div></div>
+ <div class="stat-card"><div class="num" style="color:var(--yellow)">~30%</div><div class="lbl">Frontend Built</div></div>
+ <div class="stat-card"><div class="num" style="color:var(--red)">🚫</div><div class="lbl">Rules Blocking</div></div>
+</div>
+
+<!-- SECTION 1: FIREBASE ARCHITECTURE -->
+<div class="section" data-section="firebase">
+ <div class="section-title">1. Firebase Architecture</div>
+
+ <div class="sys-box s-system">
+ <div class="sys-label" style="background:var(--cyan);color:var(--text)">CLIENTS</div>
+ <div class="sys-items">
+ <div class="sys-item">Admin Web (Web App)</div>
+ <div class="sys-item">Staff Mobile (Android: com.amaze.ops)</div>
+ <div class="sys-item">Partner Mobile (Android: to be created)</div>
+ <div class="sys-item">AmazeFab (External API)</div>
+ </div>
+ </div>
+
+ <div style="text-align:center;padding:6px;color:var(--text3);font-size:12px">⬇ Firebase Auth ⬇</div>
+
+ <div class="sys-box s-system">
+ <div class="sys-label" style="background:var(--cyan);color:var(--text)">FIREBASE (amaze-ops)</div>
+ <div class="sys-items">
+ <div class="sys-item">🔐 Authentication</div>
+ <div class="sys-item">📄 Firestore (Database)</div>
+ <div class="sys-item">📦 Storage (Photos)</div>
+ <div class="sys-item">☁ Cloud Functions (Backend Logic)</div>
+ <div class="sys-item">📢 FCM (Notifications)</div>
+ <div class="sys-item">🌐 Hosting (Admin Web)</div>
+ </div>
+ </div>
+
+ <div style="margin-top:12px">
+ <div class="node s-missing" data-id="fb-rules"><div class="lbl">🚨 Firestore Rules BLOCKED</div><div class="sub">Current: allow read,write: if false → MUST FIX FIRST</div><span class="badge" style="background:var(--red)">!</span></div>
+ </div>
+ </div>
+
+<!-- SECTION 2: FIREBASE PRODUCTS -->
+<div class="section" data-section="products">
+ <div class="section-title">2. Firebase Products</div>
+ <div class="firebase-stack">
+ <div class="node s-system" data-id="fb-auth"><div class="lbl">🔐 Auth</div><div class="sub">Email/Password<br>Custom Claims: role, partnerId</div></div>
+ <div class="node s-system" data-id="fb-firestore"><div class="lbl">📄 Firestore</div><div class="sub">NoSQL Document DB<br>15 collections<br>Rules: ⚠ BLOCKED</div></div>
+ <div class="node s-system" data-id="fb-storage"><div class="lbl">📦 Storage</div><div class="sub">Garment photos<br>Empty — rules needed</div></div>
+ <div class="node s-system" data-id="fb-functions"><div class="lbl">☁ Functions</div><div class="sub">8 callable functions<br>scaffolded</div></div>
+ <div class="node s-system" data-id="fb-fcm"><div class="lbl">📢 FCM</div><div class="sub">Push notifications<br>Not configured</div></div>
+ <div class="node s-system" data-id="fb-hosting"><div class="lbl">🌐 Hosting</div><div class="sub">Admin Web<br>Not deployed</div></div>
+ </div>
+ </div>
+
+<!-- SECTION 3: END-TO-END FLOW -->
+<div class="section" data-section="flow">
+ <div class="section-title">3. End-to-End Garment Flow</div>
+
+ <div class="row">
+ <div class="node s-external" data-id="flow-amazefab"><div class="lbl">AmazeFab</div></div>
+ <div class="h-arrow">→</div>
+ <div class="node s-external" data-id="flow-api"><div class="lbl">API Call</div><div class="sub">HTTPS</div></div>
+ <div class="h-arrow">→</div>
+ <div class="node s-missing" data-id="flow-ingest"><div class="lbl">Cloud Function</div><div class="sub">ingestOrder()</div></div>
+ </div>
+
+ <div style="text-align:center;padding:8px"><div class="v-arrow"><div class="line"></div><div class="head">▼</div></div></div>
+
+ <div class="row">
+ <div class="node s-system" data-id="flow-firestore1"><div class="lbl">Firestore</div><div class="sub">orders/{id} + garments/{id}</div></div>
+ <div class="h-arrow">→</div>
+ <div class="node s-missing" data-id="flow-sorting"><div class="lbl">Admin: Sorting</div><div class="sub">Web App</div></div>
+ </div>
+
+ <div style="text-align:center;padding:4px;color:var(--text3);font-size:10px">Assign garments to partners → create subOrders</div>
+
+ <div class="branches">
+ <div class="branch">
+ <div class="branch-line"></div>
+ <div class="node s-locked" data-id="flow-suborder"><div class="lbl">Sub-order</div></div>
+ <div class="v-arrow"><div class="line" style="height:12px"></div></div>
+ <div class="node s-missing" data-id="flow-accept"><div class="lbl">Partner: Accept</div><div class="sub">Android App</div></div>
+ </div>
+ <div class="branch">
+ <div class="branch-line" style="height:50px"></div>
+ <div class="node s-missing" data-id="flow-scan"><div class="lbl">QR Scan</div><div class="sub">Camera → validate</div></div>
+ </div>
+ <div class="branch">
+ <div class="branch-line" style="height:50px"></div>
+ <div class="node s-missing" data-id="flow-complete"><div class="lbl">Service Done</div><div class="sub">→ QC_PENDING</div></div>
+ </div>
+ </div>
+
+ <div style="text-align:center;padding:8px"><div class="v-arrow"><div class="line"></div><div class="head">▼</div></div></div>
+
+ <div class="row">
+ <div class="node s-missing" data-id="flow-qc"><div class="lbl">QC Queue</div><div class="sub">Admin: one garment at a time</div></div>
+ </div>
+
+ <div style="text-align:center;padding:6px;color:var(--text3);font-size:11px">Admin/Staff QC Decision</div>
+
+ <div class="branches">
+ <div class="branch">
+ <div class="branch-line"></div>
+ <div class="node s-system" data-id="flow-qc-pass"><div class="lbl">QC Pass</div></div>
+ <div class="v-arrow"><div class="line" style="height:12px"></div></div>
+ <div class="node s-locked" data-id="flow-rfd"><div class="lbl">READY_FOR_DELIVERY</div><div class="sub">V1 End</div></div>
+ <div class="v-arrow"><div class="line" style="height:12px"></div></div>
+ <div class="node s-missing" data-id="flow-wallet"><div class="lbl">Wallet Credit</div><div class="sub">Cloud Function</div></div>
+ </div>
+ <div class="branch">
+ <div class="branch-line"></div>
+ <div class="node s-system" data-id="flow-qc-fail"><div class="lbl">QC Fail</div></div>
+ <div class="v-arrow"><div class="line" style="height:12px"></div></div>
+ <div class="node s-missing" data-id="flow-rework"><div class="lbl">Rework (max 3x)</div></div>
+ <div style="color:var(--yellow);font-size:10px;margin-top:3px">↩ back to QC</div>
+ </div>
+ </div>
+
+ <div style="margin-top:12px">
+ <div class="node s-locked" data-id="flow-critical" style="margin:0 auto;width:fit-content"><div class="lbl">CRITICAL (garment-level)</div><div class="sub">Admin review: Reassign or Retain</div></div>
+ </div>
+ </div>
+
+<!-- SECTION 4: FINANCIAL FLOW -->
+<div class="section" data-section="finance">
+ <div class="section-title">4. Financial Lifecycle</div>
+ <div class="row">
+ <div class="node s-system" data-id="fin-qc"><div class="lbl">QC Passed</div></div>
+ <div class="h-arrow">→</div>
+ <div class="node s-missing" data-id="fin-wallet"><div class="lbl">Wallet AVAILABLE</div><div class="sub">Firestore: walletTransactions/{id}</div></div>
+ <div class="h-arrow">→</div>
+ <div class="node s-missing" data-id="fin-invoice"><div class="lbl">Invoice</div><div class="sub">Partner raises → Admin approves</div></div>
+ <div class="h-arrow">→</div>
+ <div class="node s-missing" data-id="fin-payment"><div class="lbl">Payment</div><div class="sub">Partial/Full/Reversible</div></div>
+ <div class="h-arrow">→</div>
+ <div class="node s-missing" data-id="fin-paid"><div class="lbl">PAID</div></div>
+ </div>
+ <div style="text-align:center;padding:6px;color:var(--text3);font-size:10px">Wallet credit → Available → Invoice → Approve → Payment → Paid</div>
+ </div>
+
+<!-- SECTION 5: FIRESTORE COLLECTIONS -->
+<div class="section" data-section="collections">
+ <div class="section-title">5. Firestore Collections</div>
+ <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+ <div class="node s-system" data-id="col-users"><div class="lbl">users/{uid}</div><div class="sub">Auth UID, role, partnerId</div></div>
+ <div class="node s-system" data-id="col-partners"><div class="lbl">partners/{id}</div><div class="sub">Code, category, services, pricing</div></div>
+ <div class="node s-system" data-id="col-services"><div class="lbl">services/{id}</div><div class="sub">AmazeFab ID, name, active</div></div>
+ <div class="node s-system" data-id="col-orders"><div class="lbl">orders/{id}</div><div class="sub">External ID, customer, status</div></div>
+ <div class="node s-system" data-id="col-garments"><div class="lbl">garments/{id}</div><div class="sub">QR(unique), status, price, wallet</div></div>
+ <div class="node s-system" data-id="col-suborders"><div class="lbl">subOrders/{id}</div><div class="sub">Order+Partner, progress</div></div>
+ <div class="node s-system" data-id="col-critical"><div class="lbl">criticalCases/{id}</div><div class="sub">OPEN/REVIEWED/RESOLVED</div></div>
+ <div class="node s-system" data-id="col-qc"><div class="lbl">qcRecords/{id}</div><div class="sub">PASS/FAIL, reworkRequired</div></div>
+ <div class="node s-system" data-id="col-wallet"><div class="lbl">walletTx/{id}</div><div class="sub">Partner, price, status</div></div>
+ <div class="node s-system" data-id="col-invoice"><div class="lbl">invoices/{id}</div><div class="sub">Schema ready, not built</div></div>
+ <div class="node s-system" data-id="col-exception"><div class="lbl">exceptions/{id}</div><div class="sub">Type, priority, status</div></div>
+ <div class="node s-system" data-id="col-audit"><div class="lbl">auditLogs/{id}</div><div class="sub">Who, what, when, before, after</div></div>
+ <div class="node s-system" data-id="col-sync"><div class="lbl">syncLogs/{id}</div><div class="sub">AmazeFab sync tracking</div></div>
+ <div class="node s-system" data-id="col-notif"><div class="lbl">notifications/{id}</div><div class="sub">In-app + FCM</div></div>
+ <div class="node s-system" data-id="col-scans"><div class="lbl">garments/{id}/scans/{id}</div><div class="sub">QR scan events (subcollection)</div></div>
+ </div>
+ </div>
+
+<!-- SECTION 6: CLOUD FUNCTIONS -->
+<div class="section" data-section="functions">
+ <div class="section-title">6. Cloud Functions (8 scaffolds — business logic pending)</div>
+ <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+ <div class="node s-partial" data-id="cf-ingest"><div class="lbl">apiCreateOrder()</div><div class="sub">⚙ Scaffolded — validation pending</div></div>
+ <div class="node s-partial" data-id="cf-wallet"><div class="lbl">apiSubmitQCResult()</div><div class="sub">⚙ Scaffolded — wallet trigger pending</div></div>
+ <div class="node s-missing" data-id="cf-progress"><div class="lbl">calculateProgress()</div><div class="sub">Order + partner-level aggregation</div></div>
+ <div class="node s-missing" data-id="cf-invoice"><div class="lbl">generateInvoice()</div><div class="sub">Create invoice from available wallet</div></div>
+ <div class="node s-missing" data-id="cf-payment"><div class="lbl">recordPayment()</div><div class="sub">Record + reconcile</div></div>
+ <div class="node s-missing" data-id="cf-notif"><div class="lbl">sendNotification()</div><div class="sub">FCM push + Firestore record</div></div>
+ <div class="node s-missing" data-id="cf-suborder"><div class="lbl">createSubOrder()</div><div class="sub">On sorting — create sub-order docs</div></div>
+ <div class="node s-missing" data-id="cf-qc"><div class="lbl">performQC()</div><div class="sub">QC decision + wallet trigger</div></div>
+ </div>
+ </div>
+
+<!-- SECTION 7: LOCKED RULES -->
+<div class="section" data-section="rules">
+ <div class="section-title">7. Locked Business Rules</div>
+ <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+ <div class="node s-locked"><div class="lbl">Source Ownership</div><div class="sub">AmazeFab=source, Mktpl=ops+finance</div></div>
+ <div class="node s-locked"><div class="lbl">Eligibility Matrix</div><div class="sub">Gold→Gold, Yellow→G/Y, Blue→G/Y/B</div></div>
+ <div class="node s-locked"><div class="lbl">Dual Eligibility</div><div class="sub">Category AND Service required</div></div>
+ <div class="node s-locked"><div class="lbl">Split Orders</div><div class="sub">One order → multiple partners</div></div>
+ <div class="node s-locked"><div class="lbl">Critical = Garment</div><div class="sub">Not order-level</div></div>
+ <div class="node s-locked"><div class="lbl">Reassignment ₹0</div><div class="sub">Original partner earns ₹0</div></div>
+ <div class="node s-locked"><div class="lbl">QC = Admin/Staff</div><div class="sub">One garment at a time</div></div>
+ <div class="node s-locked"><div class="lbl">Rework Max 3</div><div class="sub">Then Admin override</div></div>
+ <div class="node s-locked"><div class="lbl">QC Only → RFD</div><div class="sub">No photo shortcut</div></div>
+ <div class="node s-locked"><div class="lbl">Wallet on QC Pass</div><div class="sub">Never before, never twice</div></div>
+ <div class="node s-locked"><div class="lbl">1 Tx = 1 Invoice Line</div><div class="sub">No consolidation</div></div>
+ <div class="node s-locked"><div class="lbl">Partner Isolation</div><div class="sub">Own data only — enforced by Firestore rules</div></div>
+ <div class="node s-locked"><div class="lbl">No Capacity V1</div></div>
+ <div class="node s-locked"><div class="lbl">V1 = Ready for Delivery</div></div>
+ <div class="node s-locked"><div class="lbl">Firebase = Platform</div><div class="sub">Firestore + Storage + Auth + Functions</div></div>
+ </div>
+ </div>
+
+<!-- SECTION 8: OPEN QUESTIONS -->
+<div class="section" data-section="open">
+ <div class="section-title">8. Open Questions</div>
+ <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+ <div class="node s-missing"><div class="lbl">🔴 AmazeFab API Contract</div><div class="sub">BLOCKER — need endpoints + payload</div></div>
+ <div class="node s-missing"><div class="lbl">🟠 Firestore Rules</div><div class="sub">HIGH — currently BLOCKING all access</div></div>
+ <div class="node s-missing"><div class="lbl">🟠 GST Rates</div><div class="sub">HIGH — need CA</div></div>
+ <div class="node s-missing"><div class="lbl">🟠 Cancellation Finance</div><div class="sub">Wallet reversal?</div></div>
+ <div class="node s-missing"><div class="lbl">🟡 QR Reprint</div><div class="sub">LOW — relink or new?</div></div>
+ <div class="node s-missing"><div class="lbl">🟠 Delivery Scope</div><div class="sub">V1 ends at RFD?</div></div>
+ </div>
+ </div>
+
+<!-- SECTION 9: IMMEDIATE TODO -->
+<div class="section" data-section="todo">
+ <div class="section-title">9. Immediate TODO (Priority Order)</div>
+ <div style="display:flex;flex-direction:column;gap:8px">
+ <div class="node s-missing" style="width:fit-content"><div class="lbl">1. Fix Firestore Rules</div><div class="sub">Remove if:false — add role-based rules</div></div>
+ <div class="node s-missing" style="width:fit-content"><div class="lbl">2. Fix Storage Rules</div><div class="sub">Allow garment photo uploads</div></div>
+ <div class="node s-partial" style="width:fit-content"><div class="lbl">3. Implement Cloud Function logic</div><div class="sub">8 functions scaffolded — business logic needed</div></div>
+ <div class="node s-partial" style="width:fit-content"><div class="lbl">4. Order Ingest from AmazeFab</div><div class="sub">Webhook/HTTPS callable from AmazeFab API</div></div>
+ <div class="node s-partial" style="width:fit-content"><div class="lbl">5. Implement Sorting/Assignment</div><div class="sub">Admin Web UI + Cloud Function + partner eligibility</div></div>
+ <div class="node s-missing" style="width:fit-content"><div class="lbl">6. Build Partner Android App</div><div class="sub">Accept, QR scan, process, complete</div></div>
+ </div>
+ </div>
+
+</div>
+
+<div class="sidebar" id="sidebar">
+ <button class="sidebar-close" onclick="closeSidebar()">&times;</button>
+ <div id="sidebar-content"></div>
+</div>
+</div>
+
+<script>
+const D = {
+ 'fb-rules': { t:'🚨 Firestore Rules — BLOCKED', tp:'missing', d:'Current rules: allow read,write: if false. EVERYTHING is blocked. Must be fixed before any development. Need role-based rules for Admin/Staff/Partner access.' },
+ 'fb-auth': { t:'Firebase Authentication', tp:'system', d:'Email/Password for Admin, Staff, Partners. Custom claims: role (admin/staff/partner), partnerId (for partners). Firebase Auth handles session management.' },
+ 'fb-firestore': { t:'Firestore Database', tp:'system', d:'NoSQL document database. 15 collections. Currently empty. Rules block all access. Need rules for role-based read/write.' },
+ 'fb-storage': { t:'Firebase Storage', tp:'system', d:'For garment photos (stain, critical, instruction, QC, completion). Empty. Rules needed. Path: garments/{garmentId}/{type}_{timestamp}.jpg' },
+ 'fb-functions': { t:'Cloud Functions', tp:'system', d:'Backend logic. Node.js. 8 callable functions scaffolded: apiCreateOrder, apiAddGarmentsToOrder, apiAssignGarmentsToPartner, apiCreateCriticalCase, apiSubmitQCResult, apiCreateInvoice, apiApproveInvoice, apiRecordPayment. Business logic pending.' },
+ 'fb-fcm': { t:'Firebase Cloud Messaging', tp:'system', d:'Push notifications to Admin, Staff, Partner devices. Not configured. FCM tokens stored in user documents.' },
+ 'fb-hosting': { t:'Firebase Hosting', tp:'system', d:'Host the Admin Web app. Not deployed. Will serve the web frontend + Cloud Function API routes.' },
+
+ 'flow-ingest': { t:'ingestOrder() Cloud Function', tp:'missing', d:'HTTPS callable function. Receives order from AmazeFab. Validates, deduplicates (query by externalOrderId), creates order + garment documents in Firestore. Creates IntegrationSyncLog.' },
+ 'flow-sorting': { t:'Admin: Sorting', tp:'missing', d:'Admin Web UI. Select garments, validate partner (eligibility + service + price), add instructions/photos, assign to partners. Creates sub-orders. Calls Cloud Function.' },
+ 'flow-accept': { t:'Partner: Accept Sub-order', tp:'missing', d:'Partner Mobile (Android). Reviews assigned garments/services/instructions. Taps Accept. Updates garment status to ACCEPTED → IN_PROCESSING.' },
+ 'flow-scan': { t:'Partner: QR Scan', tp:'missing', d:'Partner Mobile. Camera scans QR. Validates garment belongs to partner. Creates GarmentScan. Moves to IN_PROCESSING.' },
+ 'flow-complete': { t:'Partner: Service Complete', tp:'missing', d:'Partner Mobile. Marks garment done. Optional photo + comment. Updates status to QC_PENDING.' },
+ 'flow-qc': { t:'Admin: QC Queue', tp:'missing', d:'Admin/Staff Web. Queue of garments in QC_PENDING. One at a time. PASS → READY_FOR_DELIVERY + wallet credit. FAIL → REWORK + instruction.' },
+ 'flow-wallet': { t:'Wallet Credit Cloud Function', tp:'missing', d:'Triggered after QC_PASSED. Checks walletCredited flag. Resolves price. Creates WalletTransaction. Sets garment.walletCredited=true. Uses Firestore transaction for atomicity.' },
+ 'flow-critical': { t:'Critical Garment', tp:'missing', d:'Partner marks CRITICAL. Admin reviews: REASSIGN (new partner, validated) or RETAIN (updated instruction). Garment-level only.' },
+
+ 'col-users': { t:'users/{uid}', tp:'system', d:'uid = Firebase Auth UID. Fields: email, name, role, partnerId, phone, active, fcmToken, createdAt.' },
+ 'col-partners': { t:'partners/{id}', tp:'system', d:'partnerCode(unique), companyName, contactPerson, phone, email, gstNumber, address, geoLocation, category(GOLD/YELLOW/BLUE), active, services[], createdAt, updatedAt.' },
+ 'col-orders': { t:'orders/{id}', tp:'system', d:'externalOrderId, originalOrderNumber, sourceSystem, customerName, customerPhone, customerCategory, status, totalGarments, cancelledReason, createdAt, updatedAt.' },
+ 'col-garments': { t:'garments/{id}', tp:'system', d:'amazeFabGarmentId, garmentCode, qrCode(unique), orderId, subOrderId, partnerId, serviceId, status, instruction, photoUrl, appliedPrice, taxAmount, walletCredited.' },
+ 'col-suborders': { t:'subOrders/{id}', tp:'system', d:'subOrderNumber(unique), orderId, partnerId, totalGarments, completedCount, status(ASSIGNED/ACCEPTED/IN_PROCESSING/COMPLETED).' },
+ 'col-critical': { t:'criticalCases/{id}', tp:'system', d:'garmentId, partnerId, status(OPEN/REVIEWED/RESOLVED), issueDescription, photoUrl, adminResolution, newPartnerId, newInstruction, resolvedBy, resolvedAt.' },
+ 'col-wallet': { t:'walletTransactions/{id}', tp:'system', d:'partnerId, garmentId, orderId, subOrderId, serviceId, appliedPrice, taxAmount, type(EARNING/CREDIT/DEBIT/REVERSAL), status(AVAILABLE/INVOICED/PAID), invoiceId.' },
+ 'col-invoice': { t:'invoices/{id}', tp:'system', d:'invoiceNumber(unique), partnerId, billingPeriodStart/End, subtotal, gstRate, cgst, sgst, igst, totalTax, grandTotal, paidAmount, status, rejectionReason.' },
+ 'col-audit': { t:'auditLogs/{id}', tp:'system', d:'actorUserId, action, entityName, entityId, beforeJson, afterJson, reason, timestamp. Immutable.' },
+ 'col-sync': { t:'integrationSyncLogs/{id}', tp:'system', d:'externalOrderId, syncType(ORDER_IMPORT/SERVICE_SYNC/ORDER_UPDATE), status, errorMessage, retryCount, payloadJson, lastAttemptAt.' },
+ 'col-notif': { t:'notifications/{id}', tp:'system', d:'userId, type, title, message, orderId, garmentId, read, createdAt.' },
+ 'flow-qc-pass': { t:'QC Passed', tp:'system', d:'Firestore garment status → QC_PASSED → READY_FOR_DELIVERY. Triggers creditWallet Cloud Function. V1 operational end.' },
+ 'flow-qc-fail': { t:'QC Not OK', tp:'system', d:'Firestore garment status → REWORK. Instruction added. Max 3 attempts. Partner re-sends for QC.' },
+ 'flow-rework': { t:'Rework', tp:'system', d:'Status in garment document. Partner reprocesses. Counter tracked. After 3 failures → Admin override.' },
+ 'flow-rfd': { t:'Ready for Delivery', tp:'locked', d:'V1 boundary. Set by QC pass. Marketplace V1 ends here. Future: extend for delivery tracking.' },
+ 'flow-amazefab': { t:'AmazeFab', tp:'external', d:'Source system. Sends orders via API. Marketplace receives via ingestOrder Cloud Function.' },
+ 'flow-wallet': { t:'Wallet Credit', tp:'system', d:'Cloud Function triggered on QC_PASSED. Atomic Firestore transaction. Checks walletCredited flag. Creates WalletTransaction with AVAILABLE status.' },
+ 'flow-suborder': { t:'Partner Sub-order', tp:'locked', d:'Format: {OrderNumber}-{PartnerCode}. subOrderNumber unique. Partner sees only own sub-orders via Firestore rules.' },
+ 'fin-qc': { t:'QC Passed → Wallet', tp:'system', d:'Only after Admin/Staff QC approval. Wallet credit via Cloud Function. Price snapshot locked at creation.' },
+ 'fin-invoice': { t:'Invoice', tp:'system', d:'Partner raises from AVAILABLE wallet transactions. Admin approves. Partial payments supported.' },
+ 'fin-payment': { t:'Payment', tp:'system', d:'Multiple/partial per invoice. Reversal reopens balance + audit.' },
+ 'cf-ingest': { t:'apiCreateOrder()', tp:'partial', d:'HTTPS callable function scaffolded. Receives order payload from frontend. Business validation, deduplication, and Firestore write logic pending implementation.' },
+ 'cf-wallet': { t:'apiSubmitQCResult()', tp:'partial', d:'HTTPS callable scaffolded. Submits QC pass/fail. Wallet credit trigger, garment status update, and rework logic pending.' },
+ 'cf-invoice': { t:'apiCreateInvoice()', tp:'partial', d:'HTTPS callable scaffolded. Invoice generation from wallet transactions. GST calculation and line item creation pending.' },
+ 'cf-notif': { t:'sendNotification()', tp:'missing', d:'Cloud Function. Sends FCM push + stores in notifications collection. Event-driven. Not yet scaffolded.' },
+};
+const TC = { built:'var(--green)', partial:'var(--yellow)', missing:'var(--red)', external:'var(--blue)', locked:'var(--purple)', system:'var(--cyan)', api:'var(--blue)' };
+document.querySelectorAll('.node').forEach(n => {
+ n.addEventListener('click', () => {
+ const d = D[n.dataset.id]; if (!d) return;
+ const c = TC[d.tp]||'var(--text3)';
+ let h = `<div class="d-title">${d.t}</div>`;
+ h += `<div class="d-type" style="background:${c}22;color:${c}">${d.tp.toUpperCase()}</div>`;
+ h += `<div class="d-desc">${d.d}</div>`;
+ h += `<div class="d-section"><h3>Source</h3><ul class="d-list">`;
+ h += `<li><span class="k">Brain</span><span><a href="../brain/BRAIN.md" style="color:var(--blue)">brain/BRAIN.md</a></span></li>`;
+ h += `<li><span class="k">Spec</span><span>AmazeFab Marketplace V1 Spec</span></li>`;
+ h += `</ul></div>`;
+ document.getElementById('sidebar-content').innerHTML = h;
+ document.getElementById('sidebar').classList.add('open');
+ });
+});
+function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
+function filterNodes() {
+ const q = document.getElementById('searchInput').value.toLowerCase();
+ document.querySelectorAll('.node').forEach(n => { n.style.opacity = n.textContent.toLowerCase().includes(q) ? '1' : '0.15'; });
+}
+</script>
+</body>
+</html>

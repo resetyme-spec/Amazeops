@@ -1,0 +1,1073 @@
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft, CheckCircle2, XCircle, Truck, QrCode, Tag, MessageSquare,
+  User, AlertTriangle, ImagePlus, X as XIcon, Camera, Upload, RefreshCw, Eye,
+  ChevronDown, ChevronUp
+} from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery } from '../lib/api';
+
+const TIER_COLORS = { GOLD: '#d97706', YELLOW: '#ea580c', ORANGE: '#ea580c', BLUE: '#3b82f6' };
+
+function careBadge(cat) {
+  const c = (cat || 'Normal').toLowerCase();
+  const crown = c === 'premium' ? '👑' : c === 'pristine' ? '🥈' : '🖤';
+  const color = c === 'premium' ? '#d97706' : '#9ca3af';
+  const bg = c === 'premium' ? '#fef3c7' : '#f3f4f6';
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, color, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 500 }}>{crown} {cat || 'Normal'}</span>;
+}
+
+function customerLabel(name, category) {
+  const c = (category || '').toLowerCase();
+  if (c === "l'amaze prime") return <span style={{ color: '#d97706', fontWeight: 600 }}>* {name}</span>;
+  if (c === 'signature') return <span style={{ color: '#d97706', fontWeight: 600 }}>{name}</span>;
+  if (c === 'regular') return <span style={{ color: '#9ca3af' }}>{name}</span>;
+  return <span>{name}</span>;
+}
+
+export default function OrderDetail() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [qcForm, setQcForm] = useState({});
+
+  // Critical mark modal state
+  const [criticalModal, setCriticalModal] = useState({ open: false, garment: null });
+  const [criticalComments, setCriticalComments] = useState('');
+  const [criticalPhotos, setCriticalPhotos] = useState(['', '', '']);
+
+  // Reject modal state
+  const [rejectModal, setRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  // QC form visibility
+  const [showQcForm, setShowQcForm] = useState(false);
+  const [qcSuccess, setQcSuccess] = useState(false);
+  const [successBanner, setSuccessBanner] = useState('');
+
+  // Re-QC Modal state for garment-wise re-application
+  const [reQcModal, setReQcModal] = useState({
+    open: false,
+    garment: null,
+    rejection: null,
+    brand: '',
+    comments: '',
+    photos: { front: '', back: '', other: '' }
+  });
+  const [reQcSubmitting, setReQcSubmitting] = useState(false);
+
+  // Photo Preview Lightbox
+  const [photoPreview, setPhotoPreview] = useState(null);
+
+  // Expandable sections
+  const [showTopDefectDetails, setShowTopDefectDetails] = useState(false);
+  const [expandedGarments, setExpandedGarments] = useState({});
+
+  const load = async () => {
+    if (!id) return;
+    setLoading(true);
+    const data = await fetchOrderById(id);
+    setOrder(data);
+
+    const isRejectedQC = data?.qcStatus === 'QC_REJECTED' || data?.status === 'QC_REJECTED' || !!data?.qcRejection;
+    setShowQcForm(isRejectedQC);
+
+    if (data?.garments) {
+      const initial = {};
+      const updates = data.garmentUpdates || data.qcRecord?.garmentUpdates || [];
+      data.garments.forEach(g => {
+        const prev = updates.find(u => u.garmentId === g.garmentId);
+        initial[g.garmentId] = {
+          brand: prev?.brand || g.brand || '',
+          comments: prev?.comments || g.comments || '',
+          photos: prev?.photos || g.photos || { front: '', back: '', other: '' },
+        };
+      });
+      setQcForm(initial);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [id]);
+
+  const handlePhotoUpload = (garmentId, slot, file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result;
+      if (dataUrl) {
+        setQcForm(prev => {
+          const current = prev[garmentId] || { brand: '', comments: '', photos: {} };
+          return {
+            ...prev,
+            [garmentId]: {
+              ...current,
+              photos: {
+                ...current.photos,
+                [slot]: dataUrl,
+              },
+            },
+          };
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAccept = async () => {
+    if (!id || !user) return;
+    setActionLoading(true);
+    try {
+      await acceptOrder(id, user);
+      await load();
+    } catch (e) { setError(e.message || 'Failed to accept'); }
+    setActionLoading(false);
+  };
+
+  const handleSubmitQC = async () => {
+    if (!id || !user || !order) return;
+    setError('');
+    const careCategory = order.careCategory || 'Normal';
+    const customerCategory = (order.customer?.category || '').toLowerCase();
+    const careRequiresQC = careCategory === 'Premium' || careCategory === 'Pristine';
+    const customerRequiresQC = customerCategory === 'signature care' || customerCategory === "l'amaze privé member" || customerCategory === "l'amaze prime";
+    const requiresQC = careRequiresQC || customerRequiresQC;
+
+    let triggerReason = '';
+    if (careRequiresQC) triggerReason = `${careCategory} care requires QC photos, brand, and comments`;
+    else if (customerRequiresQC) triggerReason = `${customerCategory} customer requires QC photos, brand, and comments`;
+
+    const updates = order.garments.map(g => {
+      const form = qcForm[g.garmentId] || { brand: '', comments: '', photos: {} };
+      if (requiresQC) {
+        const missing = [];
+        if (!form.brand?.trim()) missing.push('brand');
+        if (!form.comments?.trim()) missing.push('comments');
+        if (!form.photos?.front || !form.photos?.back || !form.photos?.other) missing.push('photos');
+        if (missing.length > 0) {
+          throw new Error(`${triggerReason}. Please complete all mandatory QC details before proceeding. Missing for ${g.garmentId}: ${missing.join(', ')}.`);
+        }
+      }
+      return { garmentId: g.garmentId, brand: form.brand, comments: form.comments, photos: form.photos };
+    });
+
+    setActionLoading(true);
+    try {
+      await submitQC(id, updates, user, false);
+      setQcSuccess(true);
+      setTimeout(() => { navigate('/orders', { replace: true }); window.location.reload(); }, 1200);
+    } catch (e) { setError(e.message || 'Failed to submit QC'); }
+    setActionLoading(false);
+  };
+
+  // Handle garment-wise Re-QC Modal
+  const openReQcModal = (garment, rej) => {
+    const existingForm = qcForm[garment.garmentId] || {};
+    setReQcModal({
+      open: true,
+      garment,
+      rejection: rej || {},
+      brand: existingForm.brand || garment.brand || '',
+      comments: existingForm.comments || '',
+      photos: existingForm.photos || garment.photos || { front: '', back: '', other: '' }
+    });
+  };
+
+  const handleModalPhotoUpload = (slot, file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result;
+      if (dataUrl) {
+        setReQcModal(prev => ({
+          ...prev,
+          photos: {
+            ...prev.photos,
+            [slot]: dataUrl
+          }
+        }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmitSingleGarmentReQC = async () => {
+    if (!reQcModal.garment || !id || !user) return;
+    if (!reQcModal.comments?.trim()) {
+      setError('Please provide comments explaining the rework done.');
+      return;
+    }
+    const { front, back, other } = reQcModal.photos || {};
+    if (!front || !back || !other) {
+      setError('Please upload all 3 photos (Front, Back, and Other) for Re-QC inspection.');
+      return;
+    }
+    setReQcSubmitting(true);
+    setError('');
+    try {
+      await submitGarmentReQC(
+        id,
+        reQcModal.garment.garmentId,
+        {
+          brand: reQcModal.brand || '',
+          comments: reQcModal.comments || '',
+          photos: reQcModal.photos || {},
+        },
+        user
+      );
+      const garmentLabel = reQcModal.garment.category || reQcModal.garment.garmentId || 'Garment';
+      setReQcModal({
+        open: false,
+        garment: null,
+        rejection: null,
+        brand: '',
+        comments: '',
+        photos: { front: '', back: '', other: '' }
+      });
+      setSuccessBanner(`Re-QC submitted successfully for ${garmentLabel}!`);
+      setTimeout(() => setSuccessBanner(''), 4000);
+      await load();
+    } catch (e) {
+      setError(e.message || 'Failed to submit Re-QC');
+    } finally {
+      setReQcSubmitting(false);
+    }
+  };
+
+  const handleDelivery = async () => {
+    if (!id || !user) return;
+    setActionLoading(true);
+    try {
+      await initiateDelivery(id, user);
+      await load();
+    } catch (e) { setError(e.message || 'Failed'); }
+    setActionLoading(false);
+  };
+
+  const handleMarkCritical = async () => {
+    if (!criticalModal.garment || !id || !user) return;
+    if (!criticalComments.trim()) { setError('Please provide comments for critical mark'); return; }
+    const filledPhotos = criticalPhotos.filter(p => p.trim());
+    if (filledPhotos.length === 0) { setError('Please add at least 1 photo'); return; }
+    setActionLoading(true);
+    try {
+      await markGarmentCritical(id, criticalModal.garment.garmentId, user, {
+        comments: criticalComments,
+        photos: { urls: filledPhotos, count: filledPhotos.length },
+      });
+      setCriticalModal({ open: false, garment: null });
+      setCriticalComments('');
+      setCriticalPhotos(['', '', '']);
+      await load();
+    } catch (e) { setError(e.message || 'Failed to mark critical'); }
+    setActionLoading(false);
+  };
+
+  const handleReject = async () => {
+    if (!id || !user) return;
+    if (!rejectReason.trim()) { setError('Please provide a rejection reason'); return; }
+    setActionLoading(true);
+    try {
+      await rejectOrder(id, user, rejectReason);
+      setRejectModal(false);
+      setRejectReason('');
+      await load();
+    } catch (e) { setError(e.message || 'Failed to reject'); }
+    setActionLoading(false);
+  };
+
+  if (loading) return <div className="loading-screen"><div className="spinner-large" /></div>;
+  if (!order) return <div className="empty-state"><p>Order not found</p><button className="btn btn-secondary" onClick={() => navigate('/orders')}>Back to Orders</button></div>;
+
+  // Garment count breakdown
+  const garments = order.garments || [];
+  const reasonText = (order.qcRejection?.reason || order.rejectionReason || '').toLowerCase();
+
+  const rejectedCount = garments.filter(g => {
+    const rej = order?.rejectedGarments?.[g.garmentId] || (g.qcStatus === 'QC_REJECTED' ? g.qcRejection : null);
+    const isMentioned = !!reasonText && (
+      reasonText.includes(g.garmentId.toLowerCase()) ||
+      (g.qrCode && reasonText.includes(g.qrCode.toLowerCase()))
+    );
+    return g.qcStatus === 'QC_REJECTED' || !!rej || isMentioned;
+  }).length;
+
+  const isReadyForDelivery = order.status === 'READY_FOR_DELIVERY' || order.deliveryStatus === 'READY_FOR_DELIVERY';
+  const isQcRejected = !isReadyForDelivery && (
+    order.status === 'QC_REJECTED' ||
+    order.qcStatus === 'QC_REJECTED' ||
+    !!order.qcRejection ||
+    !!order.rejectionReason ||
+    rejectedCount > 0
+  );
+  const actualRejectedCount = isQcRejected && rejectedCount === 0 && garments.length > 0 ? garments.length : rejectedCount;
+  const actualPassedCount = Math.max(0, garments.length - actualRejectedCount);
+  const passedCount = actualPassedCount;
+  const allGarmentsPassed = garments.length > 0 && garments.every(g => g.qcStatus === 'QC_PASSED') && actualRejectedCount === 0;
+  const isQcApproved = !isReadyForDelivery && !isQcRejected && (
+    order.qcStatus === 'QC_APPROVED' ||
+    order.status === 'QC_APPROVED' ||
+    allGarmentsPassed
+  );
+  const isQcPending = !isReadyForDelivery && !isQcApproved && !isQcRejected && (
+    order.qcStatus === 'QC_PENDING' ||
+    order.status === 'QC_SENT'
+  );
+  const isAccepted = order.status === 'IN_PROCESS';
+  const isNormalRejected = order.status === 'REJECTED' && !isQcRejected;
+  const isRejected = isNormalRejected || isQcRejected;
+
+  const canAccept = !isAccepted && !isRejected && !isQcApproved && !isQcPending && !isReadyForDelivery && (order.status === 'ASSIGNED' || order.status === 'RECEIVED');
+  const canSubmitQC = isAccepted && !isQcPending && !isQcApproved && !isQcRejected && !isReadyForDelivery;
+  const canInitiateDelivery = isQcApproved && !isReadyForDelivery && (!order.deliveryStatus || order.deliveryStatus === 'PENDING');
+  const canReject = canAccept;
+
+  return (
+    <div className="detail-screen">
+      <header className="screen-header">
+        <button className="icon-btn" onClick={() => navigate('/orders')}><ArrowLeft size={20} /></button>
+        <h1>{order.orderId || order.id}</h1>
+      </header>
+
+      {error && <div className="error-banner" onClick={() => setError('')}>{error}</div>}
+      {qcSuccess && <div className="success-banner">QC submitted successfully! Redirecting to orders...</div>}
+      {successBanner && <div className="success-banner">{successBanner}</div>}
+
+      {/* Status section */}
+      <div className="detail-section">
+        <div className="status-row">
+          <span className="status-label">Status:</span>
+          <span className={`status-badge-lg ${isReadyForDelivery ? 'status-approved' : isQcRejected ? 'status-rejected' : isQcApproved ? 'status-approved' : isQcPending ? 'status-pending' : isNormalRejected ? 'status-rejected' : 'status-active'}`}>
+            {isReadyForDelivery ? 'READY TO DELIVER' : isQcRejected ? 'QC REJECTED' : isQcApproved ? 'QC APPROVED' : isQcPending ? 'QC SENT' : order.status}
+          </span>
+        </div>
+      </div>
+
+      {/* QC Rejection Summary - Minimal tag as requested: "2 rejected · 2 passed thats alll enough" */}
+      {isQcRejected && (
+        <div style={{
+          background: '#fef2f2',
+          border: '1.5px solid #fecaca',
+          borderRadius: 10,
+          padding: '10px 14px',
+          margin: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 13,
+          fontWeight: 700,
+          color: '#dc2626'
+        }}>
+          <AlertTriangle size={18} color="#dc2626" />
+          <span>{actualRejectedCount} Rejected · {actualPassedCount} Passed</span>
+        </div>
+      )}
+
+      {/* Normal partner rejection */}
+      {isNormalRejected && (order.rejectionReason || order.qcRejection) && (
+        <div className="rejection-card" style={{ margin: '14px 16px' }}>
+          <p><strong>Reason:</strong> {order.rejectionReason || order.qcRejection?.reason || '—'}</p>
+          <p><strong>Comments:</strong> {order.rejectionComments || order.qcRejection?.comments || '—'}</p>
+          <p><strong>Rejected by:</strong> {order.rejectedBy || order.qcRejection?.rejectedBy || '—'} · {order.rejectedAt || order.qcRejection?.rejectedAt ? new Date(order.rejectedAt || order.qcRejection?.rejectedAt).toLocaleString('en-IN') : ''}</p>
+        </div>
+      )}
+
+      {/* Ready for Delivery Banner */}
+      {isReadyForDelivery && (
+        <div style={{
+          background: '#ecfdf5',
+          border: '1.5px solid #6ee7b7',
+          borderRadius: 12,
+          padding: 16,
+          margin: '14px 16px',
+          boxShadow: '0 2px 8px rgba(5, 150, 105, 0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Truck size={20} color="#059669" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: '#059669' }}>Delivery Initiated — Ready to Deliver</div>
+              <div style={{ fontSize: 13, color: '#047857', marginTop: 2 }}>
+                Quality inspection is passed and delivery has been initiated. This order is now ready for customer delivery / pickup.
+                {order.deliveryInitiatedAt && <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: '#065f46' }}>Initiated at: {new Date(order.deliveryInitiatedAt).toLocaleString('en-IN')}</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QC Approved Banner */}
+      {isQcApproved && (
+        <div style={{
+          background: '#f0fdf4',
+          border: '1.5px solid #86efac',
+          borderRadius: 12,
+          padding: 16,
+          margin: '14px 16px',
+          boxShadow: '0 2px 8px rgba(22, 163, 74, 0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircle2 size={20} color="#16a34a" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: '#16a34a' }}>QC Passed & Approved!</div>
+              <div style={{ fontSize: 13, color: '#15803d', marginTop: 2 }}>
+                All garments passed quality inspection. You can now initiate delivery to the customer.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Garments Section */}
+      <div className="detail-section">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <h3 className="section-title" style={{ margin: 0 }}><QrCode size={16} /> Garments ({garments.length})</h3>
+          {isAccepted && showQcForm && !isQcRejected && (
+            <button
+              type="button"
+              onClick={() => {
+                const anyOpen = Object.values(expandedGarments).some(Boolean);
+                if (anyOpen) {
+                  setExpandedGarments({});
+                } else {
+                  const all = {};
+                  garments.forEach(g => { all[g.garmentId] = true; });
+                  setExpandedGarments(all);
+                }
+              }}
+              style={{
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: 6,
+                padding: '4px 10px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#475569',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              {Object.values(expandedGarments).some(Boolean) ? <>Collapse All <ChevronUp size={13} /></> : <>Expand All <ChevronDown size={13} /></>}
+            </button>
+          )}
+        </div>
+        {garments.map((g, idx) => {
+          const form = qcForm[g.garmentId] || { brand: '', comments: '', photos: {} };
+
+          // Specific garment rejection check:
+          const isMentionedInReason = !!reasonText && (
+            reasonText.includes(g.garmentId.toLowerCase()) ||
+            (g.qrCode && reasonText.includes(g.qrCode.toLowerCase()))
+          );
+          const gRej = order?.rejectedGarments?.[g.garmentId] ||
+            (g.qcStatus === 'QC_REJECTED' ? (g.qcRejection || order?.qcRejection) : null) ||
+            (isMentionedInReason ? (order?.qcRejection || { reason: order?.rejectionReason, comments: order?.qcRejection?.comments || order?.rejectionComments }) : null);
+
+          const isGarmentRejected = g.qcStatus === 'QC_REJECTED' || !!gRej || isMentionedInReason || (isQcRejected && rejectedCount === 0);
+          const isGarmentPassed = !isGarmentRejected && (
+            g.qcStatus === 'QC_PASSED' ||
+            isQcApproved ||
+            (isQcRejected && !isGarmentRejected)
+          );
+
+          const isReassignedGarment = g.isReassigned === true || g.criticalStatus === 'REASSIGNED' || !!g.adminCriticalComment;
+          const isCriticalGarment = g.isCritical === true && !isReassignedGarment;
+
+          return (
+            <div key={g.garmentId} className="garment-card">
+              <div className="garment-header">
+                <span className="garment-number">{idx + 1}</span>
+                <div style={{ flex: 1 }}>
+                  <p className="garment-id">{g.category || 'Garment'} · {g.garmentId}</p>
+                  <p className="garment-detail">
+                    {g.qrCode || '—'} · <span style={{ color: TIER_COLORS[g.garmentCategory] || TIER_COLORS[g.category] || '#6b7280', fontWeight: 600 }}>{g.garmentCategory || g.category}</span> · {g.serviceType}
+                  </p>
+                </div>
+                {!isRejected && !isQcApproved && !isCriticalGarment && !isReassignedGarment && (
+                  <button className="btn btn-critical btn-sm" onClick={() => { setCriticalModal({ open: true, garment: g }); setCriticalComments(''); setCriticalPhotos(['', '', '']); }}>
+                    <AlertTriangle size={14} /> Mark Critical
+                  </button>
+                )}
+                {isReassignedGarment && (
+                  <span className="status-badge" style={{ background: '#dbeafe', color: '#1e40af', fontWeight: 700, padding: '3px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    🔄 REASSIGNED
+                  </span>
+                )}
+                {isCriticalGarment && <span className="critical-badge">⚠️ CRITICAL</span>}
+
+                {/* Garment status badge */}
+                {isGarmentRejected && <span className="status-badge" style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 700 }}>QC REJECTED</span>}
+                {isGarmentPassed && <span className="status-badge" style={{ background: '#dcfce7', color: '#16a34a', fontWeight: 700 }}>QC PASSED</span>}
+                {!isGarmentRejected && !isGarmentPassed && g.qcStatus && <span className="status-badge">{g.qcStatus}</span>}
+              </div>
+
+              {/* Critical/Reassigned Info if present */}
+              {(isCriticalGarment || isReassignedGarment) && (
+                <div className="critical-info" style={{ marginTop: 8, padding: '12px 14px', borderRadius: 8, background: isReassignedGarment ? '#eff6ff' : '#fef2f2', border: isReassignedGarment ? '1px solid #bfdbfe' : '1px solid #fecaca' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 700, color: isReassignedGarment ? '#1d4ed8' : '#dc2626', fontSize: 12 }}>
+                      {isReassignedGarment ? '🔄 Reassigned by Admin' : '⚠️ Critical Defect Marked'}
+                    </span>
+                    {g.criticalMarkedAt && <span style={{ fontSize: 11, color: '#6b7280' }}>{new Date(g.criticalMarkedAt).toLocaleString('en-IN')}</span>}
+                  </div>
+                  {g.criticalComments && (
+                    <p style={{ margin: '2px 0 6px', color: '#111827', fontSize: 13 }}>
+                      <strong>Partner Note:</strong> {g.criticalComments}
+                    </p>
+                  )}
+                  {g.criticalPhotos?.urls?.length > 0 && (
+                    <div className="critical-photos" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                      {g.criticalPhotos.urls.map((url, i) => url && (
+                        <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="photo-tag" style={{ textDecoration: 'none', fontSize: 11, background: '#fff', border: isReassignedGarment ? '1px solid #bfdbfe' : '1px solid #fca5a5', color: isReassignedGarment ? '#1d4ed8' : '#dc2626', padding: '2px 8px', borderRadius: 4 }}>
+                          📷 Defect Photo {i + 1}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {g.adminCriticalComment ? (
+                    <div style={{ marginTop: 8, background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, color: '#15803d', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                          🛡️ Admin Instructions & Action
+                        </span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '2px 8px', borderRadius: 10 }}>
+                          PROCEED WITH WORK
+                        </span>
+                      </div>
+                      <p style={{ margin: '4px 0', fontSize: 13, color: '#14532d', lineHeight: 1.4 }}>
+                        <strong>Instructions:</strong> {g.adminCriticalComment}
+                      </p>
+                      <div style={{ fontSize: 11, color: '#4b5563', marginTop: 4 }}>
+                        Reviewed by: <strong>{g.adminCriticalCommentBy || 'Admin'}</strong>
+                        {g.adminCriticalCommentAt && ` · ${new Date(g.adminCriticalCommentAt).toLocaleString('en-IN')}`}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '8px 10px', fontSize: 12, color: '#92400e', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>⏳</span>
+                      <span>Garment marked critical. Waiting for Admin review and instructions...</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Rejected Garment Card Body: Garment name, reason for rejection, and View & Re-QC button */}
+              {isGarmentRejected && (
+                <div style={{ marginTop: 10, padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8 }}>
+                  <div style={{ fontSize: 13, color: '#991b1b', marginBottom: 8 }}>
+                    <strong>Reason:</strong> <span style={{ color: '#dc2626', fontWeight: 600 }}>{gRej?.reason || order?.qcRejection?.reason || order?.rejectionReason || 'Quality defect'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    style={{ background: '#ea580c', borderColor: '#ea580c', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, padding: '6px 12px', borderRadius: 6 }}
+                    onClick={() => openReQcModal(g, gRej)}
+                  >
+                    <Eye size={14} /> View & Re-QC
+                  </button>
+                </div>
+              )}
+
+              {/* Garment QC Passed Notice (For non-rejected garments in a rejected order) */}
+              {isGarmentPassed && isQcRejected && (
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', marginTop: 8, fontSize: 12, color: '#16a34a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle2 size={15} />
+                  <span><strong>QC Passed:</strong> No rework required.</span>
+                </div>
+              )}
+
+              {/* QC Upload Form for INITIAL QC ONLY (when order is IN_PROCESS and start QC clicked) */}
+              {isAccepted && showQcForm && !isQcRejected && !isQcApproved && (() => {
+                const isExpanded = !!expandedGarments[g.garmentId];
+                const photosCount = Object.values(form.photos || {}).filter(Boolean).length;
+                const hasFormData = !!(form.brand || form.comments || photosCount > 0);
+
+                return (
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedGarments(prev => ({ ...prev, [g.garmentId]: !prev[g.garmentId] }))}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        border: isExpanded ? '1.5px solid #ea580c' : '1px solid #fed7aa',
+                        background: isExpanded ? '#fff7ed' : '#ffffff',
+                        color: '#c2410c',
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <Tag size={13} />
+                        <span>QC Inspection Form</span>
+                        {hasFormData && (
+                          <span style={{ fontSize: 10, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>
+                            {photosCount > 0 ? `${photosCount} photo${photosCount > 1 ? 's' : ''} added ✓` : 'Updated ✓'}
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#9a3412', fontWeight: 700 }}>
+                        {isExpanded ? <>Hide Form <ChevronUp size={14} /></> : <>Open Form <ChevronDown size={14} /></>}
+                      </span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="qc-form" style={{ marginTop: 8, padding: 12, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                        {/* Brand */}
+                        <div className="form-group">
+                          <label><Tag size={14} /> Brand</label>
+                          <input
+                            className="form-input"
+                            value={form.brand}
+                            onChange={e => setQcForm({ ...qcForm, [g.garmentId]: { ...form, brand: e.target.value } })}
+                            placeholder="Enter brand name"
+                          />
+                        </div>
+
+                        {/* Comments */}
+                        <div className="form-group">
+                          <label><MessageSquare size={14} /> Comments</label>
+                          <textarea
+                            className="form-input textarea"
+                            value={form.comments}
+                            onChange={e => setQcForm({ ...qcForm, [g.garmentId]: { ...form, comments: e.target.value } })}
+                            placeholder="Any quality notes..."
+                            rows={2}
+                          />
+                        </div>
+
+                        {/* Photos: Front, Back, Other */}
+                        <div className="photo-inputs">
+                          {[
+                            { slot: 'front', label: 'Front Photo' },
+                            { slot: 'back', label: 'Back Photo' },
+                            { slot: 'other', label: 'Other Photo' },
+                          ].map(({ slot, label }) => (
+                            <div key={slot} className="photo-input-group" style={{ marginBottom: 8 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                                <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>
+                                  {label}
+                                </label>
+                                {form.photos?.[slot] && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setQcForm({
+                                        ...qcForm,
+                                        [g.garmentId]: {
+                                          ...form,
+                                          photos: { ...form.photos, [slot]: '' }
+                                        }
+                                      });
+                                    }}
+                                    style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 11, cursor: 'pointer', padding: 0 }}
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <input
+                                  className="form-input"
+                                  style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
+                                  value={form.photos?.[slot] || ''}
+                                  onChange={e => setQcForm({
+                                    ...qcForm,
+                                    [g.garmentId]: {
+                                      ...form,
+                                      photos: { ...form.photos, [slot]: e.target.value }
+                                    }
+                                  })}
+                                  placeholder="Enter Photo URL"
+                                />
+                                <label
+                                  style={{
+                                    padding: '7px 10px',
+                                    background: '#eff6ff',
+                                    border: '1px solid #bfdbfe',
+                                    borderRadius: 6,
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    color: '#2563eb',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  <Camera size={13} /> Upload
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    style={{ display: 'none' }}
+                                    onChange={e => {
+                                      const f = e.target.files?.[0];
+                                      if (f) handlePhotoUpload(g.garmentId, slot, f);
+                                    }}
+                                  />
+                                </label>
+                              </div>
+
+                              {form.photos?.[slot] && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                                  <img
+                                    src={form.photos[slot]}
+                                    alt={slot}
+                                    onClick={() => setPhotoPreview({ url: form.photos[slot], title: `${g.category || 'Garment'} — ${label}` })}
+                                    style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                                  />
+                                  <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Attached (tap to view)</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Action Bar */}
+      <div className="action-bar">
+        {canAccept && (
+          <button className="btn btn-primary btn-full" onClick={handleAccept} disabled={actionLoading}>
+            <CheckCircle2 size={18} /> Accept Order
+          </button>
+        )}
+
+        {canSubmitQC && !showQcForm && (
+          <button className="btn btn-outline btn-full" onClick={() => setShowQcForm(true)}>
+            <Tag size={18} /> Start QC
+          </button>
+        )}
+
+        {canSubmitQC && showQcForm && (
+          <button className="btn btn-primary btn-full" onClick={handleSubmitQC} disabled={actionLoading}>
+            <CheckCircle2 size={18} /> Submit for QC
+          </button>
+        )}
+
+        {canInitiateDelivery && (
+          <button className="btn btn-success btn-full" onClick={handleDelivery} disabled={actionLoading}>
+            <Truck size={18} /> Initiate Delivery
+          </button>
+        )}
+
+        {canReject && (
+          <button className="btn btn-danger btn-full" onClick={() => setRejectModal(true)} disabled={actionLoading}>
+            <XCircle size={18} /> Reject Order
+          </button>
+        )}
+      </div>
+
+      {/* Critical Mark Modal */}
+      {criticalModal.open && (
+        <div className="modal-overlay" onClick={() => setCriticalModal({ open: false, garment: null })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3><AlertTriangle size={18} color="#dc2626" /> Mark Critical — {criticalModal.garment?.garmentId}</h3>
+              <button className="modal-close" onClick={() => setCriticalModal({ open: false, garment: null })}><XIcon size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label><MessageSquare size={14} /> Comments *</label>
+                <textarea className="form-input textarea" value={criticalComments} onChange={e => setCriticalComments(e.target.value)} placeholder="Describe why this garment is critical..." rows={3} />
+              </div>
+              <div className="form-group">
+                <label><ImagePlus size={14} /> Photos (max 3) *</label>
+                {criticalPhotos.map((photo, i) => (
+                  <input key={i} className="form-input" style={{ marginBottom: 8 }} value={photo} onChange={e => { const next = [...criticalPhotos]; next[i] = e.target.value; setCriticalPhotos(next); }} placeholder={`Photo ${i + 1} URL`} />
+                ))}
+              </div>
+              <button className="btn btn-critical btn-full" onClick={handleMarkCritical} disabled={actionLoading}>
+                <AlertTriangle size={16} /> Mark as Critical
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {rejectModal && (
+        <div className="modal-overlay" onClick={() => setRejectModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3><XCircle size={18} color="#dc2626" /> Reject Order</h3>
+              <button className="modal-close" onClick={() => setRejectModal(false)}><XIcon size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label><MessageSquare size={14} /> Rejection Reason *</label>
+                <textarea className="form-input textarea" value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Why are you rejecting this order?" rows={4} />
+              </div>
+              <button className="btn btn-danger btn-full" onClick={handleReject} disabled={actionLoading}>
+                <XCircle size={16} /> Reject Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Garment Re-QC Modal */}
+      {reQcModal.open && reQcModal.garment && (
+        <div className="modal-overlay" onClick={() => setReQcModal(prev => ({ ...prev, open: false }))}>
+          <div className="modal-content" style={{ maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>
+                <RefreshCw size={18} color="#ea580c" />
+                Re-QC — {reQcModal.garment.category || 'Garment'} ({reQcModal.garment.garmentId})
+              </h3>
+              <button className="modal-close" onClick={() => setReQcModal(prev => ({ ...prev, open: false }))}><XIcon size={20} /></button>
+            </div>
+            <div className="modal-body">
+              {/* Rejection Details */}
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: '#111827', marginBottom: 4 }}>
+                  <strong style={{ color: '#dc2626' }}>Reason:</strong> {reQcModal.rejection?.reason || order?.qcRejection?.reason || order?.rejectionReason || 'Quality defect'}
+                </div>
+                {(reQcModal.rejection?.comments || order?.qcRejection?.comments) && (
+                  <div style={{ fontSize: 13, color: '#374151', marginBottom: 6 }}>
+                    <strong>Admin Comment:</strong> {reQcModal.rejection?.comments || order?.qcRejection?.comments}
+                  </div>
+                )}
+
+                {/* Defect photos from admin */}
+                {(reQcModal.rejection?.photos?.length > 0 || order?.qcRejection?.photos?.length > 0) && (
+                  <div style={{ marginTop: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', display: 'block', marginBottom: 6 }}>
+                      Defect Photos from Admin (Tap to view):
+                    </span>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {(reQcModal.rejection?.photos || order?.qcRejection?.photos || []).map((pUrl, pIdx) => (
+                        <div
+                          key={pIdx}
+                          style={{ position: 'relative', cursor: 'pointer' }}
+                          onClick={() => setPhotoPreview({ url: pUrl, title: `Admin Defect Photo ${pIdx + 1}` })}
+                        >
+                          <img
+                            src={pUrl}
+                            alt={`Defect ${pIdx + 1}`}
+                            style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: '1.5px solid #fca5a5' }}
+                          />
+                          <div style={{ position: 'absolute', bottom: 2, right: 2, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 3, padding: '1px 3px', fontSize: 9 }}>
+                            <Eye size={10} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Rework Form */}
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+                <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: '#1e293b' }}>
+                  Re-apply QC
+                </h4>
+
+                {/* Brand */}
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label><Tag size={14} /> Brand</label>
+                  <input
+                    className="form-input"
+                    value={reQcModal.brand}
+                    onChange={e => setReQcModal(prev => ({ ...prev, brand: e.target.value }))}
+                    placeholder="Enter brand name"
+                  />
+                </div>
+
+                {/* Comments */}
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label><MessageSquare size={14} /> Comments / Rework Action *</label>
+                  <textarea
+                    className="form-input textarea"
+                    rows={3}
+                    value={reQcModal.comments}
+                    onChange={e => setReQcModal(prev => ({ ...prev, comments: e.target.value }))}
+                    placeholder="Describe rework done (e.g. stain re-treated and cleaned)..."
+                  />
+                </div>
+
+                {/* 3 Photos: Front, Back, Other */}
+                <div className="form-group" style={{ marginBottom: 14 }}>
+                  <label><Camera size={14} /> 3 Photos (Front, Back, Other) *</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+                    {[
+                      { slot: 'front', label: '1. Front Photo' },
+                      { slot: 'back', label: '2. Back Photo' },
+                      { slot: 'other', label: '3. Other Photo' }
+                    ].map(({ slot, label }) => (
+                      <div key={slot} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>{label}</span>
+                          {reQcModal.photos?.[slot] && (
+                            <button
+                              type="button"
+                              onClick={() => setReQcModal(prev => ({ ...prev, photos: { ...prev.photos, [slot]: '' } }))}
+                              style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input
+                            className="form-input"
+                            style={{ flex: 1, padding: '6px 10px', fontSize: 12 }}
+                            value={reQcModal.photos?.[slot] || ''}
+                            onChange={e => setReQcModal(prev => ({
+                              ...prev,
+                              photos: { ...prev.photos, [slot]: e.target.value }
+                            }))}
+                            placeholder="Enter Photo URL or Upload"
+                          />
+                          <label style={{
+                            padding: '6px 12px',
+                            background: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            borderRadius: 6,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: '#2563eb',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            whiteSpace: 'nowrap'
+                          }}>
+                            <Camera size={14} /> Upload
+                            <input
+                              type="file"
+                              accept="image/*"
+                              style={{ display: 'none' }}
+                              onChange={e => {
+                                const f = e.target.files?.[0];
+                                if (f) handleModalPhotoUpload(slot, f);
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        {reQcModal.photos?.[slot] && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                            <img
+                              src={reQcModal.photos[slot]}
+                              alt={slot}
+                              onClick={() => setPhotoPreview({ url: reQcModal.photos[slot], title: label })}
+                              style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Attached (tap to view)</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Submit Re-QC Button */}
+                <button
+                  type="button"
+                  className="btn btn-primary btn-full"
+                  style={{ background: '#ea580c', borderColor: '#ea580c', padding: 12, fontSize: 14, fontWeight: 700 }}
+                  onClick={handleSubmitSingleGarmentReQC}
+                  disabled={reQcSubmitting}
+                >
+                  <RefreshCw size={16} className={reQcSubmitting ? 'spinning' : ''} />
+                  {reQcSubmitting ? 'Submitting Re-QC...' : 'Submit Re-QC for this Garment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Photo Lightbox Preview Modal */}
+      {photoPreview && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.85)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setPhotoPreview(null)}
+        >
+          <div
+            style={{
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, color: '#fff' }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{photoPreview.title}</span>
+              <button
+                type="button"
+                onClick={() => setPhotoPreview(null)}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 30,
+                  height: 30,
+                  color: '#fff',
+                  fontSize: 16,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                &times;
+              </button>
+            </div>
+            <img
+              src={photoPreview.url}
+              alt={photoPreview.title}
+              style={{
+                maxWidth: '85vw',
+                maxHeight: '75vh',
+                objectFit: 'contain',
+                borderRadius: 8,
+                boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+                background: '#000',
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

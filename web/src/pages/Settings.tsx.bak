@@ -1,0 +1,165 @@
+import { useState, useEffect } from 'react';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+
+const DEFAULT_API_URL = 'http://localhost:3002';
+const DEFAULT_API_KEY = '';
+const SETTINGS_DOC = 'settings/integrations';
+
+export default function SettingsPage() {
+ const [activeTab, setActiveTab] = useState('integrations');
+ const [saved, setSaved] = useState(false);
+ const [saveMsg, setSaveMsg] = useState('');
+ const [loading, setLoading] = useState(true);
+
+ const [apiUrl, setApiUrl] = useState('');
+ const [apiKey, setApiKey] = useState('');
+ const [testResult, setTestResult] = useState<string | null>(null);
+ const [testing, setTesting] = useState(false);
+
+ useEffect(() => {
+  (async () => {
+   try {
+    const snap = await getDoc(doc(db, SETTINGS_DOC));
+    if (snap.exists()) {
+     const d = snap.data();
+     setApiUrl(d.apiUrl || DEFAULT_API_URL);
+     setApiKey(d.apiKey || DEFAULT_API_KEY);
+    } else {
+     setApiUrl(DEFAULT_API_URL);
+     setApiKey(DEFAULT_API_KEY);
+    }
+   } catch {
+    setApiUrl(DEFAULT_API_URL);
+    setApiKey(DEFAULT_API_KEY);
+   }
+   setLoading(false);
+  })();
+ }, []);
+
+ async function handleSave() {
+  setSaveMsg('');
+  setTestResult(null);
+  try {
+   await setDoc(doc(db, SETTINGS_DOC), {
+    apiUrl: apiUrl.replace(/\/$/, ''),
+    apiKey,
+    updatedAt: serverTimestamp(),
+   });
+   localStorage.setItem('apiBaseUrl', apiUrl.replace(/\/$/, ''));
+   localStorage.setItem('apiKey', apiKey);
+   setSaveMsg('Settings saved to database! Refresh the page to apply.');
+   setSaved(true);
+   setTimeout(() => { setSaved(false); setSaveMsg(''); }, 3000);
+  } catch (e: any) {
+   setSaveMsg(`Error saving: ${e.message}`);
+   setSaved(true);
+   setTimeout(() => { setSaved(false); setSaveMsg(''); }, 4000);
+  }
+ }
+
+ async function testConnection() {
+  setTesting(true);
+  setTestResult(null);
+  try {
+   const base = apiUrl.replace(/\/$/, '');
+   const res = await fetch(`${base}/api/orders`, {
+    headers: { 'x-api-key': apiKey || 'test' },
+   });
+   if (res.ok) {
+    const data = await res.json();
+    const count = Array.isArray(data.orders) ? data.orders.length : Array.isArray(data) ? data.length : 0;
+    setTestResult(`Connected! Found ${count} orders.`);
+   } else {
+    setTestResult(`Error ${res.status}: ${res.statusText}`);
+   }
+  } catch (e: any) {
+   setTestResult(`Cannot connect: ${e.message}`);
+  }
+  setTesting(false);
+ }
+
+ const tabs = [
+  { id: 'profile', label: 'Profile' },
+  { id: 'notifications', label: 'Notifications' },
+  { id: 'integrations', label: 'API Connection' },
+ ];
+
+ return (
+  <div className="page">
+  <div className="page-header">
+  <div><h1>Settings</h1><p className="page-subtitle">Manage your account and API connection</p></div>
+  </div>
+  <div className="settings-layout">
+  <aside className="settings-tabs">
+  {tabs.map(tab => (
+  <button key={tab.id} className={`settings-tab ${activeTab === tab.id ? 'settings-tab--active' : ''}`} onClick={() => setActiveTab(tab.id)}>
+  {tab.label}
+  </button>
+  ))}
+  </aside>
+  <div className="settings-content">
+  {activeTab === 'profile' && (
+  <div className="card">
+  <div className="card-header"><h3>Profile Settings</h3></div>
+  <div className="card-body">
+  <form onSubmit={e => { e.preventDefault(); handleSave(); }} className="form">
+  <div className="form-group"><label>Display Name</label><input type="text" placeholder="Your name" /></div>
+  <div className="form-group"><label>Email</label><input type="email" disabled /></div>
+  <div className="form-group"><label>Phone</label><input type="tel" placeholder="Your phone number" /></div>
+  <button type="submit" className="btn btn-primary">Save Changes</button>
+  {saved && <p className="success-msg">{saveMsg}</p>}
+  </form>
+  </div>
+  </div>
+  )}
+  {activeTab === 'notifications' && (
+  <div className="card">
+  <div className="card-header"><h3>Notification Preferences</h3></div>
+  <div className="card-body">
+  <div className="notification-preferences">
+  <label className="toggle-row"><span>Email notifications</span><input type="checkbox" defaultChecked /></label>
+  <label className="toggle-row"><span>Push notifications</span><input type="checkbox" defaultChecked /></label>
+  <label className="toggle-row"><span>Critical case alerts</span><input type="checkbox" defaultChecked /></label>
+  <label className="toggle-row"><span>Daily delivery reminders</span><input type="checkbox" defaultChecked /></label>
+  </div>
+  <button className="btn btn-primary" onClick={handleSave}>Save Preferences</button>
+  </div>
+  </div>
+  )}
+  {activeTab === 'integrations' && (
+  <div className="card">
+  <div className="card-header"><h3>API Connection</h3><p className="text-muted">Connect to your customer order system</p></div>
+  <div className="card-body">
+  {loading ? (
+   <p>Loading settings…</p>
+  ) : (
+  <form onSubmit={e => { e.preventDefault(); handleSave(); }} className="form">
+  <div className="form-group">
+  <label>API URL</label>
+  <input className="form-input" value={apiUrl} onChange={e => setApiUrl(e.target.value)} placeholder="https://your-api-server.com" />
+  <small className="text-muted">The web address where orders are fetched from. Your developer will give you this.</small>
+  </div>
+  <div className="form-group">
+  <label>API Key</label>
+  <input className="form-input" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Paste the API key here" />
+  <small className="text-muted">Password to access the API. Your developer will give you this.</small>
+  </div>
+  <div className="form-actions" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+  <button type="submit" className="btn btn-primary">Save & Connect</button>
+  <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={testing}>
+  {testing ? 'Testing...' : 'Test Connection'}
+  </button>
+  {saved && <span className="success-msg">{saveMsg}</span>}
+  {testResult && <span className={testResult.startsWith('Connected') ? 'success-msg' : 'error-msg'}>{testResult}</span>}
+  </div>
+  </form>
+  )}
+  </div>
+  </div>
+  )}
+  </div>
+  </div>
+  </div>
+  );
+}

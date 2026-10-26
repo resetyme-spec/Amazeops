@@ -1,0 +1,49 @@
+rules_version = '2';
+service firebase.storage {
+ match /b/{bucket}/o {
+
+ // Storage: authenticated users can read
+ function isAuth() {
+ return request.auth != null;
+ }
+
+ function isAdmin() {
+ return false;
+ }
+
+ function isAdminOrStaff() {
+ return false;
+ }
+
+ function isPartner() {
+ return false;
+ }
+
+ // Garment photos — organized by garment ID
+ match /garments/{garmentId}/{allPaths=**} {
+ allow read: if isAuth();
+ allow create: if isAuth();
+ allow update: if isAuth();
+ allow delete: if isAdmin();
+ }
+
+ // Profile photos
+ match /profiles/{userId}/{allPaths=**} {
+ allow read: if isAuth();
+ allow create: if isAuth() && request.auth.uid == userId;
+ allow update: if isAuth() && request.auth.uid == userId;
+ allow delete: if isAuth() && request.auth.uid == userId;
+ }
+
+ // Partner documents
+ match /partners/{partnerId}/{allPaths=**} {
+ allow read: if isAuth();
+ allow write: if isAdmin();
+ }
+
+ // Default: deny all
+ match /{allPaths=**} {
+ allow read, write: if false;
+ }
+ }
+}

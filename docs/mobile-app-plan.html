@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mobile App Architecture Plan</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: #f8fafc; color: #0f172a; padding: 32px; line-height: 1.6; }
+  h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 4px; }
+  .subtitle { color: #64748b; font-size: 15px; margin-bottom: 32px; }
+  h2 { font-size: 20px; font-weight: 700; margin: 32px 0 16px; color: #0f172a; }
+  h3 { font-size: 15px; font-weight: 700; margin: 20px 0 10px; color: #334155; }
+
+  /* Flow Diagram */
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 16px 0; padding: 20px; background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .node { padding: 10px 16px; border-radius: 10px; font-size: 12.5px; font-weight: 600; text-align: center; min-width: 100px; }
+  .node-admin { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+  .node-partner { background: linear-gradient(135deg, #06b6d4, #22d3ee); color: #fff; }
+  .node-staff { background: linear-gradient(135deg, #f59e0b, #fbbf24); color: #fff; }
+  .node-system { background: linear-gradient(135deg, #10b981, #34d399); color: #fff; }
+  .node-action { background: #f1f5f9; color: #334155; border: 1.5px dashed #94a3b8; }
+  .node-start { background: #0f172a; color: #fff; font-weight: 700; }
+  .arrow { font-size: 18px; color: #94a3b8; font-weight: 700; }
+  .arrow-label { font-size: 10px; color: #64748b; text-align: center; font-weight: 500; }
+
+  /* Phase boxes */
+  .phase { background: #fff; border-radius: 14px; padding: 20px 24px; margin: 12px 0; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .phase-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .phase-num { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+  .phase-title { font-size: 15px; font-weight: 700; color: #0f172a; }
+  .phase-desc { font-size: 13.5px; color: #475569; margin-bottom: 12px; }
+  .task-list { list-style: none; padding: 0; }
+  .task-list li { padding: 8px 12px; font-size: 13px; color: #334155; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; gap: 8px; }
+  .task-list li:last-child { border-bottom: none; }
+  .task-list li::before { content: '→'; color: #6366f1; font-weight: 700; flex-shrink: 0; }
+  .files { font-family: 'SF Mono', monospace; font-size: 11.5px; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; color: #6366f1; }
+
+  /* Tech stack */
+  .tech-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 12px 0; }
+  .tech-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; }
+  .tech-name { font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+  .tech-desc { font-size: 12px; color: #64748b; }
+
+  .approve-box { background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 1px solid #bbf7d0; border-radius: 14px; padding: 20px 24px; margin-top: 32px; text-align: center; }
+  .approve-box h2 { color: #166534; margin: 0 0 8px; }
+  .approve-box p { color: #15803d; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>📱 Mobile App — Implementation Plan</h1>
+<p class="subtitle">Partner App + Staff App + Admin Portal extensions — Phase-by-phase breakdown</p>
+
+<!-- ===== HIGH-LEVEL FLOW ===== -->
+<h2>🔄 High-Level Flow</h2>
+<div class="flow">
+  <div class="node node-start">Admin Portal</div>
+  <div class="arrow">→</div>
+  <div class="arrow-label">creates roles<br>& assigns</div>
+  <div class="node node-admin">Staff User</div>
+  <div class="arrow">→</div>
+  <div class="arrow-label">monitors & QC</div>
+  <div class="node node-staff">Partner User</div>
+  <div class="arrow">→</div>
+  <div class="arrow-label">processes orders</div>
+  <div class="node node-system">Order Lifecycle</div>
+</div>
+
+<!-- ===== ORDER LIFECYCLE ===== -->
+<h2>🔁 Order Lifecycle (Complete Flow)</h2>
+<div class="flow" style="flex-wrap: wrap;">
+  <div class="node node-start">ADMIN<br>Creates Order</div>
+  <div class="arrow">→</div>
+  <div class="node node-action">ASSIGNED<br>to Partner</div>
+  <div class="arrow">→</div>
+  <div class="node node-partner">PARTNER<br>Accepts</div>
+  <div class="arrow">→</div>
+  <div class="node node-partner">IN PROCESS<br>Processing</div>
+  <div class="arrow">→</div>
+  <div class="node node-partner">SEND FOR QC<br>(with photos)</div>
+  <div class="arrow">→</div>
+  <div class="node node-action">QC PENDING</div>
+  <div class="arrow">↓ rejected<br>↑ approved</div>
+  <div class="node node-staff">STAFF<br>QC Review</div>
+  <div class="arrow">→ approved</div>
+  <div class="node node-action">QC APPROVED</div>
+  <div class="arrow">→</div>
+  <div class="node node-partner">DELIVERY<br>Initiation</div>
+  <div class="arrow">→</div>
+  <div class="node node-system">COMPLETED</div>
+</div>
+
+<!-- ===== PHASES ===== -->
+<h2>📋 Implementation Phases</h2>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="phase-num">1</div>
+    <div class="phase-title">Foundation — Shared Infrastructure</div>
+  </div>
+  <div class="phase-desc">Build the core backend + auth + data models that all three apps depend on.</div>
+  <ul class="task-list">
+    <li>Extend Firebase Firestore schema — new collections: <span class="files">users, roles, permissions, activityLogs</span></li>
+    <li>Build RBAC system — roles: <span class="files">admin, staff, partner</span> with granular permissions</li>
+    <li>Extend order model — add <span class="files">qcStatus, qcPhotos, deliveryStatus, acceptedAt, qcRejectedAt</span></li>
+    <li>Extend garment model — add <span class="files">brand, comments, photos{front,back,other}, qcNotes</span></li>
+    <li>Build Cloud Functions — auth hooks, activity logging, status-change triggers</li>
+    <li>Extend Dummy API — add endpoints for orders-by-partner, QC actions, activity logs</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="phase-num">2</div>
+    <div class="phase-title">Admin Portal — User & Permission Management</div>
+  </div>
+  <div class="phase-desc">Give admins full control over who accesses what.</div>
+  <ul class="task-list">
+    <li>New page: <span class="files">Users</span> — CRUD for Staff & Partner users</li>
+    <li>Per-user config: role, assigned orders, module access, action permissions</li>
+    <li>New page: <span class="files">Roles & Permissions</span> — define role templates</li>
+    <li>New page: <span class="files">Activity Logs</span> — complete audit trail viewer</li>
+    <li>Order assignment — admin assigns orders to specific partners</li>
+    <li>QC configuration — set photo requirements per customer category</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="phase-num">3</div>
+    <div class="phase-title">Partner Mobile App</div>
+  </div>
+  <div class="phase-desc">React mobile app for partners to process orders on their phones.</div>
+  <ul class="task-list">
+    <li>Auth — phone/email login, role-based routing</li>
+    <li><strong>Dashboard:</strong> New Orders, In Progress, QC Pending, QC Rejected, QC Approved, Delivery Pending, Completed</li>
+    <li><strong>Order Detail:</strong> garment list, QR codes, customer category, processing info</li>
+    <li><strong>Accept Order:</strong> status ASSIGNED → IN_PROCESS</li>
+    <li><strong>QC Form:</strong> per-garment — brand, comments, front/back/other photos</li>
+    <li>Photo validation — mandatory for Signature Care & L'Amaze Prive</li>
+    <li><strong>Send for QC:</strong> submit with all required data → status QC_PENDING</li>
+    <li><strong>QC Rejected view:</strong> see rejection reason, correct, resubmit</li>
+    <li><strong>Delivery Initiation:</strong> after QC_APPROVED, mark as delivery started</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="phase-num">4</div>
+    <div class="phase-title">Staff Mobile App</div>
+  </div>
+  <div class="phase-desc">React mobile app for staff to review QC, monitor orders, manage delivery.</div>
+  <ul class="task-list">
+    <li>Auth — phone/email login, role-based routing</li>
+    <li><strong>Dashboard:</strong> QC Pending queue, Completed QC, All Orders</li>
+    <li><strong>QC Review:</strong> view partner-submitted data + photos per garment</li>
+    <li><strong>QC Approve:</strong> QC_PENDING → QC_APPVED, trigger notification to partner</li>
+    <li><strong>QC Reject:</strong> QC_PENDING → QC_REJECTED with reason + comments</li>
+    <li><strong>Order Monitor:</strong> view all assigned orders, status tracking</li>
+    <li><strong>Delivery Initiate:</strong> mark QC_APPROVED orders as out for delivery</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="phase-num">5</div>
+    <div class="phase-title">Notifications & Real-time Updates</div>
+  </div>
+  <div class="phase-desc">Keep everyone in sync with live updates.</div>
+  <ul class="task-list">
+    <li>Firestore real-time listeners on order collections (per-user filtered)</li>
+    <li>Push notifications — QC status changes, new assignments, rejections</li>
+    <li>In-app notification center for both Partner & Staff apps</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="phase-num">6</div>
+    <div class="phase-title">Testing & Deployment</div>
+  </div>
+  <div class="phase-desc">Polish, test, and go live.</div>
+  <ul class="task-list">
+    <li>End-to-end testing of full order lifecycle</li>
+    <li>Permission testing — verify data isolation between partners</li>
+    <li>Photo upload testing — validate mandatory photo enforcement</li>
+    <li>Activity log verification — ensure all actions are captured</li>
+    <li>Build mobile apps (Capacitor / React Native / PWA)</li>
+    <li>Deploy & onboard first batch of partners & staff</li>
+  </ul>
+</div>
+
+<!-- ===== TECH STACK ===== -->
+<h2>🛠 Tech Stack</h2>
+<div class="tech-grid">
+  <div class="tech-card">
+    <div class="tech-name">Backend</div>
+    <div class="tech-desc">Firebase Firestore + Cloud Functions + Dummy Order API</div>
+  </div>
+  <div class="tech-card">
+    <div class="tech-name">Admin Portal</div>
+    <div class="tech-desc">React (existing web app — extended)</div>
+  </div>
+  <div class="tech-card">
+    <div class="tech-name">Partner App</div>
+    <div class="tech-desc">React + Capacitor (iOS + Android)</div>
+  </div>
+  <div class="tech-card">
+    <div class="tech-name">Staff App</div>
+    <div class="tech-desc">React + Capacitor (iOS + Android)</div>
+  </div>
+  <div class="tech-card">
+    <div class="tech-name">Auth</div>
+    <div class="tech-desc">Firebase Auth (email/phone)</div>
+  </div>
+  <div class="tech-card">
+    <div class="tech-name">Storage</div>
+    <div class="tech-desc">Firebase Storage (photos)</div>
+  </div>
+  <div class="tech-card">
+    <div class="tech-name">Real-time</div>
+    <div class="tech-desc">Firestore listeners + FCM push</div>
+  </div>
+  <div class="tech-card">
+    <div class="tech-name">State</div>
+    <div class="tech-desc">React Context + Firestore real-time</div>
+  </div>
+</div>
+
+<!-- ===== PROJECT STRUCTURE ===== -->
+<h2>📁 New Project Structure</h2>
+<div class="phase">
+  <div class="phase-desc">Two new React apps will be created alongside the existing admin portal:</div>
+  <ul class="task-list">
+    <li><span class="files">web/</span> — Admin Portal (existing, will be extended)</li>
+    <li><span class="files">partner-app/</span> — New React app for Partners</li>
+    <li><span class="files">staff-app/</span> — New React app for Staff</li>
+    <li><span class="files">functions/</span> — Cloud Functions (extended)</li>
+    <li><span class="files">shared/</span> — Shared types, utils, components across all apps</li>
+  </ul>
+</div>
+
+<!-- ===== DATA MODEL CHANGES ===== -->
+<h2>🗄 Data Model Changes</h2>
+<div class="phase">
+  <h3>New Collections</h3>
+  <ul class="task-list">
+    <li><span class="files">users</span> — id, name, email, phone, role (admin/staff/partner), assignedOrders[], permissions{}</li>
+    <li><span class="files">roles</span> — id, name, permissions[], description</li>
+    <li><span class="files">activityLogs</span> — userId, userName, role, action, orderId, subOrderId, previousValue, newValue, comments, timestamp</li>
+  </ul>
+  <h3>Order Model — Extended Fields</h3>
+  <ul class="task-list">
+    <li><span class="files">qcStatus</span> — PENDING / APPROVED / REJECTED</li>
+    <li><span class="files">qcRejection</span> — { reason, comments, rejectedBy, rejectedAt }</li>
+    <li><span class="files">deliveryStatus</span> — PENDING / INITIATED / COMPLETED</li>
+    <li><span class="files">acceptedAt</span> — timestamp</li>
+    <li><span class="files">assignedPartnerId</span> — link to partner user</li>
+  </ul>
+  <h3>Garment Model — Extended Fields</h3>
+  <ul class="task-list">
+    <li><span class="files">brand</span> — string</li>
+    <li><span class="files">comments</span> — string</li>
+    <li><span class="files">photos</span> — { front: url, back: url, other: url }</li>
+    <li><span class="files">qcNotes</span> — string (staff QC comments)</li>
+  </ul>
+</div>
+
+<!-- ===== WHAT GETS BUILT FIRST ===== -->
+<h2>🎯 Recommended Build Order</h2>
+<div class="flow" style="flex-direction: column; align-items: stretch;">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div class="node node-start" style="min-width:40px;">Sprint 1</div>
+    <div class="node node-admin">Phase 1: Foundation + Admin User Mgmt</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+    <div class="node node-start" style="min-width:40px;">Sprint 2</div>
+    <div class="node node-partner">Phase 3: Partner App (Core)</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+    <div class="node node-start" style="min-width:40px;">Sprint 3</div>
+    <div class="node node-staff">Phase 4: Staff App (QC)</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+    <div class="node node-start" style="min-width:40px;">Sprint 4</div>
+    <div class="node node-system">Phase 5: Notifications + Polish</div>
+  </div>
+</div>
+
+<div class="approve-box">
+  <h2>✅ Ready for Approval</h2>
+  <p>Review this plan and the flow diagram above. Once approved, I'll start with <strong>Sprint 1 — Phase 1 (Foundation)</strong> and work through each phase sequentially.</p>
+  <p style="margin-top:8px;">If anything needs adjustment — scoping, order, features — let me know before we begin.</p>
+</div>
+
+</body>
+</html>

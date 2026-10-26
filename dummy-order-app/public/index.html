@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+ <meta charset="UTF-8">
+ <title>Dummy Order Creator</title>
+ <style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f3f4f6; padding: 24px; color: #1f2937; }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 28px; margin-bottom: 8px; }
+  .subtitle { color: #6b7280; margin-bottom: 24px; }
+  .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  h2 { font-size: 18px; margin-bottom: 16px; color: #4f46e5; }
+  h3 { font-size: 15px; margin-bottom: 10px; color: #374151; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #374151; }
+  input, select, textarea { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; font-family: inherit; margin-bottom: 14px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .garment-item { background: #f9fafb; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e5e7eb; }
+  button { padding: 10px 20px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 600; }
+  .btn-primary { background: #4f46e5; color: white; }
+  .btn-primary:hover { background: #4338ca; }
+  .btn-secondary { background: #e5e7eb; color: #374151; }
+  .btn-add { background: #10b981; color: white; font-size: 13px; padding: 8px 14px; }
+  .btn-remove { background: #fee2e2; color: #b91c1c; font-size: 12px; padding: 4px 8px; }
+  .success { background: #d1fae5; color: #065f46; padding: 12px; border-radius: 6px; margin-bottom: 14px; }
+  .error { background: #fee2e2; color: #991b1b; padding: 12px; border-radius: 6px; margin-bottom: 14px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; background: #e0e7ff; color: #4338ca; margin-right: 4px; }
+  .order-list { max-height: 400px; overflow-y: auto; }
+  .order-row { padding: 12px; border-bottom: 1px solid #e5e7eb; }
+  .order-row:last-child { border-bottom: none; }
+  .order-id { font-weight: 700; color: #4f46e5; }
+  .muted { color: #6b7280; font-size: 13px; }
+  .cat-gold { background: #d97706; color: #fff; }
+  .cat-orange { background: #ea580c; color: #fff; }
+  .cat-blue { background: #3b82f6; color: #fff; }
+  .api-config { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin-bottom: 16px; font-size: 13px; }
+  .api-config strong { color: #1e40af; }
+  code { background: #1f2937; color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+ </style>
+</head>
+<body>
+ <div class="container">
+  <h1>Dummy Order Creator</h1>
+  <p class="subtitle">Stand-in for the customer app — creates orders your admin panel can fetch</p>
+
+  <div class="api-config">
+   <strong>API URL:</strong> <code>http://localhost:3002</code><br>
+   <strong>API Key:</strong> <code>dummy-app-key-2025</code><br>
+   <small>Use these values in your admin panel Settings &rarr; API Connection</small>
+  </div>
+
+  <div class="card">
+   <h2>Create New Order</h2>
+   <div id="message"></div>
+   <form id="orderForm">
+    <h3>Customer Details</h3>
+    <div class="row">
+     <div><label>Customer Name *</label><input id="customerName" required value="Ramesh Kumar"></div>
+     <div><label>Customer Phone *</label><input id="customerPhone" required value="+91 98765 43210"></div>
+    </div>
+    <div class="row">
+     <div>
+      <label>Customer Category</label>
+      <select id="customerCategory">
+       <option value="Regular Customer">Regular Customer</option>
+       <option value="Signature Care">Signature Care</option>
+       <option value="L'Amaze Priv&eacute; Member">L'Amaze Priv&eacute; Member</option>
+      </select>
+     </div>
+     <div>
+      <label>Care Category</label>
+      <select id="careCategory">
+       <option value="Normal">Normal</option>
+       <option value="Premium">Premium</option>
+       <option value="Pristine">Pristine</option>
+      </select>
+     </div>
+    </div>
+    <div class="row">
+     <div>
+      <label>Status</label>
+      <select id="status">
+       <option value="RECEIVED">RECEIVED</option>
+       <option value="IN_PROCESS">IN_PROCESS</option>
+       <option value="COMPLETED">COMPLETED</option>
+       <option value="DELIVERED">DELIVERED</option>
+       <option value="QC_PENDING">QC_PENDING</option>
+      </select>
+     </div>
+    </div>
+
+    <h3>Garments <button type="button" class="btn-add" onclick="addGarment()">+ Add Garment</button></h3>
+    <div id="garmentsList"></div>
+
+    <div style="margin-top: 24px;">
+     <button type="submit" class="btn-primary">Create Order</button>
+     <button type="button" class="btn-secondary" onclick="loadOrders()" style="margin-left: 8px;">Refresh List</button>
+    </div>
+   </form>
+  </div>
+
+  <div class="card">
+   <h2>Services <button type="button" class="btn-add" onclick="document.getElementById('serviceForm').style.display='flex'">+ Add Service</button></h2>
+   <div id="serviceForm" style="display: none; background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e5e7eb; gap: 12px; flex-wrap: wrap;">
+    <div style="flex: 1 1 200px;"><label>Service Name *</label><input id="svcName" placeholder="e.g. Wash & Iron"></div>
+    <div style="flex: 1 1 120px;"><label>Code (optional)</label><input id="svcCode" placeholder="e.g. WASH-IRON"></div>
+    <div style="flex: 1 1 200px;"><label>Description</label><input id="svcDesc" placeholder="Optional"></div>
+    <div style="flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px;">
+     <button type="button" class="btn-primary" onclick="createService()">Save</button>
+     <button type="button" class="btn-secondary" onclick="document.getElementById('serviceForm').style.display='none'">Cancel</button>
+    </div>
+   </div>
+   <div id="servicesList"></div>
+  </div>
+
+  <div class="card">
+   <h2>Recent Orders</h2>
+   <div id="ordersList" class="order-list">Loading...</div>
+  </div>
+ </div>
+
+ <script>
+  const API_KEY = 'dummy-app-key-2025';
+  const API_BASE = 'http://localhost:3002';
+  let allServices = [];
+
+  function addGarment(data = {}) {
+   const div = document.createElement('div');
+   div.className = 'garment-item';
+   const svcOptions = allServices.length > 0
+    ? allServices.map(s => `<option value="${s.name}">${s.name}${s.code ? ' (' + s.code + ')' : ''}</option>`).join('')
+    : '<option value="">-- no services yet --</option>';
+   div.innerHTML = `
+    <div class="row">
+     <div><label>Garment ID</label><input class="garmentId" value="${data.garmentId || 'GAR-' + Date.now() + '-' + Math.floor(Math.random()*1000)}"></div>
+     <div><label>QR Code</label><input class="qrCode" value="${data.qrCode || 'QR-' + Date.now()}"></div>
+    </div>
+    <div class="row">
+     <div>
+      <label>Garment</label>
+      <select class="category">
+       <option value="SHIRT" ${data.category === 'SHIRT' ? 'selected' : ''}>SHIRT</option>
+       <option value="PANT" ${data.category === 'PANT' ? 'selected' : ''}>PANT</option>
+       <option value="SAREE" ${data.category === 'SAREE' ? 'selected' : ''}>SAREE</option>
+       <option value="JACKET" ${data.category === 'JACKET' ? 'selected' : ''}>JACKET</option>
+       <option value="OTHER" ${data.category === 'OTHER' ? 'selected' : ''}>OTHER</option>
+      </select>
+     </div>
+     <div>
+      <label>Category</label>
+      <select class="garmentCategory">
+       <option value="GOLD" ${data.garmentCategory === 'GOLD' ? 'selected' : ''}>GOLD</option>
+       <option value="ORANGE" ${data.garmentCategory === 'ORANGE' ? 'selected' : ''}>ORANGE</option>
+       <option value="BLUE" ${data.garmentCategory === 'BLUE' ? 'selected' : ''}>BLUE</option>
+      </select>
+     </div>
+    </div>
+    <div class="row">
+     <div>
+      <label>Service Type</label>
+      <select class="serviceType">
+       ${svcOptions}
+      </select>
+     </div>
+    </div>
+    <button type="button" class="btn-remove" onclick="this.parentElement.remove()">Remove</button>
+   `;
+   document.getElementById('garmentsList').appendChild(div);
+  }
+
+  function refreshGarmentServiceDropdowns() {
+   const options = allServices.length > 0
+    ? allServices.map(s => `<option value="${s.name}">${s.name}${s.code ? ' (' + s.code + ')' : ''}</option>`).join('')
+    : '<option value="">-- no services yet --</option>';
+   document.querySelectorAll('.garment-item .serviceType').forEach(sel => {
+    const current = sel.value;
+    sel.innerHTML = '<option value="">-- select service --</option>' + options;
+    if ([...sel.options].some(o => o.value === current)) sel.value = current;
+   });
+  }
+
+  async function loadServices() {
+   try {
+    const res = await fetch(API_BASE + '/api/services', { headers: { 'x-api-key': API_KEY } });
+    const data = await res.json();
+    allServices = data.services || [];
+
+    const list = document.getElementById('servicesList');
+    if (!list) return;
+    if (allServices.length === 0) {
+     list.innerHTML = '<p class="muted">No services yet. Add one above.</p>';
+     return;
+    }
+    list.innerHTML = allServices.map(s => `
+     <div class="service-item" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+      <div>
+       <strong>${s.name}</strong> <span class="badge">${s.id}</span> ${s.code ? '<span class="badge">' + s.code + '</span>' : ''}
+       ${!s.active ? '<span class="badge" style="background:#fee2e2;color:#991b1b">Inactive</span>' : ''}
+       ${s.description ? '<div class="muted">' + s.description + '</div>' : ''}
+      </div>
+      <div>
+       <button type="button" class="btn-remove" onclick="toggleService('${s.id}')">${s.active ? 'Disable' : 'Enable'}</button>
+       <button type="button" class="btn-remove" onclick="deleteService('${s.id}')">Delete</button>
+      </div>
+     </div>
+    `).join('');
+   } catch (e) {}
+   refreshGarmentServiceDropdowns();
+  }
+
+  async function createService() {
+   const name = document.getElementById('svcName').value.trim();
+   if (!name) { alert('Service name is required'); return; }
+   try {
+    const res = await fetch(API_BASE + '/api/services', {
+     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+     body: JSON.stringify({
+      name, code: document.getElementById('svcCode').value.trim() || undefined,
+      description: document.getElementById('svcDesc').value.trim() || undefined, active: true,
+     }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+     document.getElementById('serviceForm').style.display = 'none';
+     ['svcName', 'svcCode', 'svcDesc'].forEach(id => document.getElementById(id).value = '');
+     loadServices();
+    } else { alert('Error: ' + (data.error || 'Failed')); }
+   } catch (err) { alert('Connection error: ' + err.message); }
+  }
+
+  async function deleteService(id) {
+   if (!confirm('Delete this service?')) return;
+   try {
+    const res = await fetch(API_BASE + '/api/services/' + id, { method: 'DELETE', headers: { 'x-api-key': API_KEY } });
+    if (res.ok) loadServices();
+   } catch (e) { alert('Error deleting service'); }
+  }
+
+  async function toggleService(id) {
+   try {
+    await fetch(API_BASE + '/api/services/' + id, {
+     method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+     body: JSON.stringify({}),
+    });
+    loadServices();
+   } catch (e) {}
+  }
+
+  document.getElementById('orderForm').addEventListener('submit', async (e) => {
+   e.preventDefault();
+   const garments = [...document.querySelectorAll('.garment-item')].map(d => ({
+    garmentId: d.querySelector('.garmentId').value,
+    qrCode: d.querySelector('.qrCode').value,
+    category: d.querySelector('.category').value,
+    garmentCategory: d.querySelector('.garmentCategory').value,
+    serviceType: d.querySelector('.serviceType').value,
+   }));
+
+   const payload = {
+    customerName: document.getElementById('customerName').value,
+    customerPhone: document.getElementById('customerPhone').value,
+    customerCategory: document.getElementById('customerCategory').value,
+    careCategory: document.getElementById('careCategory').value,
+    status: document.getElementById('status').value,
+    garments,
+    services: allServices.map(s => ({ code: s.code || s.name, name: s.name })),
+   };
+
+   try {
+    const res = await fetch(API_BASE + '/api/orders', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+     body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (res.ok) {
+     showMessage('Order created: ' + data.orderId, 'success');
+     document.getElementById('orderForm').reset();
+     document.getElementById('garmentsList').innerHTML = '';
+     addGarment();
+     loadOrders();
+    } else {
+     showMessage('Error: ' + (data.error || 'Failed'), 'error');
+    }
+   } catch (err) {
+    showMessage('Connection error: ' + err.message, 'error');
+   }
+  });
+
+  function showMessage(text, type) {
+   document.getElementById('message').innerHTML = '<div class="' + type + '">' + text + '</div>';
+   setTimeout(() => document.getElementById('message').innerHTML = '', 3000);
+  }
+
+  async function loadOrders() {
+   try {
+    const res = await fetch(API_BASE + '/api/orders', { headers: { 'x-api-key': API_KEY } });
+    const data = await res.json();
+    const orders = data.orders || [];
+    if (orders.length === 0) {
+     document.getElementById('ordersList').innerHTML = '<p class="muted">No orders yet. Create one above.</p>';
+     return;
+    }
+    document.getElementById('ordersList').innerHTML = orders.map(o => {
+     const c = o.customer || {};
+     const garments = (o.garments || []).map(g => {
+      const catColor = g.garmentCategory === 'GOLD' ? '#d97706' : g.garmentCategory === 'ORANGE' ? '#ea580c' : '#3b82f6';
+      const catText = '#fff';
+      return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + catColor + ';color:' + catText + ';margin-right:4px;">' + (g.garmentCategory || 'GOLD') + '</span> ' + (g.category || '');
+     }).join(' &bull; ');
+     return '<div class="order-row">' +
+      '<div><span class="order-id">' + o.id + '</span> <span class="badge">' + o.status + '</span></div>' +
+      '<div class="muted">' + c.name + ' &bull; ' + c.phone + ' &bull; ' + c.category + '</div>' +
+      '<div class="muted">Care: ' + (o.careCategory || 'Normal') + ' &bull; ' + (o.garments?.length || 0) + ' garments &bull; ' + new Date(o.createdAt).toLocaleString() + '</div>' +
+      '<div class="muted" style="margin-top:4px;">' + garments + '</div>' +
+     '</div>';
+    }).join('');
+   } catch (e) {
+    document.getElementById('ordersList').innerHTML = '<p class="error">Cannot connect to API</p>';
+   }
+  }
+
+  // --- Initial state ---
+  (async () => {
+   await loadServices();
+   addGarment();
+   loadOrders();
+  })();
+ </script>
+</body>
+</html>

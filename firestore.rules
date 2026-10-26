@@ -1,0 +1,207 @@
+rules_version = '2';
+
+service cloud.firestore {
+ match /databases/{database}/documents {
+
+ // Helper functions
+ function isSignedIn() {
+ return request.auth != null;
+ }
+
+ function isAdmin() {
+  return isSignedIn() && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPER_ADMIN');
+ }
+
+ function isStaff() {
+ return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'STAFF';
+ }
+
+ function isPartner() {
+ return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'PARTNER';
+ }
+
+ function isActive() {
+ return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+ }
+
+ function isOwner(userId) {
+ return isSignedIn() && request.auth.uid == userId;
+ }
+
+ // Users collection
+ match /users/{userId} {
+ allow read: if isSignedIn();
+ allow write: if isAdmin();
+ allow create: if isSignedIn(); // Allow any signed-in user to create their own profile during onboarding
+ }
+
+ // Partners collection
+ match /partners/{partnerId} {
+ allow read: if isSignedIn() && isActive();
+ allow create, update, delete: if isAdmin();
+ }
+
+ // Orders collection
+ match /orders/{orderId} {
+  allow read: if isSignedIn() && isActive();
+  allow create: if isAdmin() || isStaff();
+  allow update: if isAdmin() || isStaff() || (isSignedIn() && isActive() && request.resource.data.keys().hasAny(['qcStatus', 'qcSubmittedAt', 'qcSubmittedBy', 'qcGarments', 'qcRejection', 'qcApprovedBy', 'deliveryStatus', 'deliveryInitiatedAt']));
+
+ // Garments subcollection
+ match /garments/{garmentId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+
+ // QC records subcollection
+ match /qcRecords/{qcId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+ }
+
+ // Critical cases subcollection
+ match /criticalCases/{caseId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+ }
+
+ // Scans subcollection
+ match /scans/{scanId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isPartner() || isAdmin() || isStaff();
+ }
+
+ // Media subcollection
+ match /media/{mediaId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isPartner() || isAdmin() || isStaff();
+ }
+ }
+
+ // Sub-orders subcollection (inside orders)
+ match /subOrders/{subOrderId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff() || isPartner();
+ }
+
+ // Timeline subcollection
+ match /timeline/{eventId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+ }
+ }
+
+ // Top-level garments (cross-order queries)
+ match /garments/{garmentId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+
+ match /qcRecords/{qcId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+ }
+
+ match /criticalCases/{caseId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+ }
+
+ match /scans/{scanId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isPartner() || isAdmin() || isStaff();
+ }
+
+ match /media/{mediaId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isPartner() || isAdmin() || isStaff();
+ }
+ }
+
+ // Critical cases (top-level for admin queue)
+ match /criticalCases/{caseId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+ }
+
+ // QC records (top-level for QC queue)
+ match /qcRecords/{qcId} {
+ allow read: if isSignedIn() && isActive();
+ allow create: if isAdmin() || isStaff() || isPartner();
+ allow update, delete: if isAdmin() || isStaff();
+ }
+
+ // Wallet transactions
+ match /walletTransactions/{txId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin();
+ }
+
+ // Invoices
+ match /invoices/{invoiceId} {
+ allow read: if isSignedIn() && isActive();
+ allow create, update, delete: if isAdmin();
+ }
+
+ // Invoice payments subcollection
+ match /invoices/{invoiceId}/payments/{paymentId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin();
+ }
+
+ // Exceptions
+ match /exceptions/{exceptionId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+ }
+
+ // Audit logs (immutable)
+ match /auditLogs/{logId} {
+ allow read: if isSignedIn() && isActive();
+ allow create: if isAdmin() || isStaff();
+ allow update, delete: if false;
+ }
+
+ // Integration sync logs
+ match /integrationSyncLogs/{syncId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin();
+ }
+
+ // Notifications
+ match /notifications/{notifId} {
+ allow read: if isSignedIn() && isActive();
+ allow create: if isAdmin() || isStaff();
+ allow update: if isOwner(resource.data.userId);
+ allow delete: if isOwner(resource.data.userId);
+ }
+
+ // Services
+ match /services/{serviceId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff();
+ }
+
+ // Partner services
+ match /partnerServices/{partnerServiceId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin();
+ }
+
+ // Partner pricings
+ match /partnerPricings/{pricingId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin();
+ }
+
+ // Settings
+ match /settings/{settingId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin();
+ }
+
+ // Sub-orders (top-level — for cross-order queries in OrderDetail)
+ match /subOrders/{subOrderId} {
+ allow read: if isSignedIn() && isActive();
+ allow write: if isAdmin() || isStaff() || isPartner();
+ }
+ }
+}

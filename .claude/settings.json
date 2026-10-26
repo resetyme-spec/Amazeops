@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(firebase emulators:start --only functions,firestore,auth)",
+      "Bash(firebase login:list)",
+      "Bash(findstr \":9099\\\\|:8080\\\\|:4400\\\\|:4500\")",
+      "Bash(findstr \"9099 8080 4400 4500\")",
+      "Bash(taskkill //F //PID 6956)",
+      "Bash(taskkill //F //PID 18828)",
+      "Bash(curl -s -o NUL -w \"%{http_code}\" http://127.0.0.1:5001/amaze-ops/us-central1/apiCreatePartner)",
+      "Bash(firebase emulators:exec --only firestore \"echo emulator_rules_deployed\")",
+      "Bash(findstr \"8080 5001 9099 LISTENING\")",
+      "Bash(curl -s -X POST http://127.0.0.1:8080/emulator/v1/projects/amaze-ops/rules -H \"Content-Type: application/json\" -d \"{\\\\\"rules\\\\\":{\\\\\"firestore\\\\\":{\\\\\"rules_version\\\\\":\\\\\"2\\\\\",\\\\\"rules\\\\\":{\\\\\"databases\\\\\":{\\\\\"database\\\\\":{\\\\\"document\\\\\":{\\\\\"match\\\\\":\\\\\"/databases/{database}/documents\\\\\",\\\\\"allow\\\\\":\\\\\"true\\\\\"}}}}}}}\")",
+      "Bash(curl -s -X PATCH \"http://127.0.0.1:8080/emulator/v1/projects/amaze-ops/databases/\\(default\\)/rules\" -H \"Content-Type: application/json\" -d \"{\\\\\"rules\\\\\":{\\\\\"rules_version\\\\\":\\\\\"2\\\\\",\\\\\"service\\\\\":{\\\\\"cloud.firestore\\\\\":{\\\\\"match\\\\\":\\\\\"/databases/{database}/documents\\\\\",\\\\\"allow\\\\\":\\\\\"if true;\\\\\"}}}}\")",
+      "Bash(findstr \":5173.*LISTENING\")",
+      "Bash(node src/server.js)",
+      "Bash(timeout 3 bash -c 'until curl -s -o NUL -w \"%%{http_code}\" http://localhost:3002/api/orders -H \"x-api-key: dummy-app-key-2025\" 2>/dev/null | grep -q \"200\"; do sleep 0.5; done; echo \"Server is UP\"')",
+      "Bash(curl -s -o NUL -w \"%{http_code}\" http://localhost:3002/api/orders -H \"x-api-key: dummy-app-key-2025\")",
+      "Bash(curl -s http://localhost:3002/api/orders -H \"x-api-key: dummy-app-key-2025\")",
+      "Bash(curl -s -I -X OPTIONS http://localhost:3002/api/orders -H \"Origin: http://localhost:5173\" -H \"Access-Control-Request-Method: GET\")",
+      "Bash(timeout 3 bash -c 'until curl -s -o NUL -w \"%{http_code}\" http://localhost:3002/api/services -H \"x-api-key: dummy-app-key-2025\" 2>/dev/null | grep -q \"200\"; do sleep 0.5; done; echo \"UP\"')",
+      "Bash(curl -s http://localhost:3002/api/services -H \"x-api-key: dummy-app-key-2025\")",
+      "Bash(powershell -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 1; echo 'Killed all node processes'\")",
+      "Bash(powershell -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 1\")",
+      "Bash(curl -s -o NUL -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(curl -s http://localhost:5173/)"
+    ]
+  }
+}
