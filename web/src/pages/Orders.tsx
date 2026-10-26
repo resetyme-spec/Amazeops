@@ -988,7 +988,14 @@ export default function OrdersPage() {
         const reassignedCount = countReassigned(garments);
 
         return (
-         <div key={displayId} style={{ borderBottom: '1px solid #f1f5f9' }}>
+         <div
+          key={displayId}
+          style={{
+           borderBottom: isOpen ? '2px solid #cbd5e1' : '1px solid #f1f5f9',
+           background: isOpen ? '#f5f7ff' : '#fff',
+           transition: 'all 0.15s ease'
+          }}
+         >
           {/* Main Row */}
           <div
            style={{
@@ -997,8 +1004,9 @@ export default function OrdersPage() {
             alignItems: 'center',
             padding: '13px 18px',
             cursor: 'pointer',
-            background: isOpen ? '#f8fafc' : '#fff',
-            borderLeft: isOpen ? '3px solid #6366f1' : '3px solid transparent',
+            background: isOpen ? '#eef2ff' : '#fff',
+            borderLeft: isOpen ? '4px solid #4f46e5' : '4px solid transparent',
+            boxShadow: isOpen ? '0 1px 3px rgba(79,70,229,0.06)' : 'none',
             transition: 'background 0.15s ease, border-color 0.15s ease'
            }}
            onClick={() => toggleExpand(displayId)}
@@ -1006,8 +1014,21 @@ export default function OrdersPage() {
            onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = '#fff'; }}
           >
            {/* 1. Chevron toggle */}
-           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 6, background: isOpen ? '#e0e7ff' : '#f1f5f9', color: isOpen ? '#4338ca' : '#64748b' }}>
-            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+           <div
+            style={{
+             display: 'flex',
+             alignItems: 'center',
+             justifyContent: 'center',
+             width: 24,
+             height: 24,
+             borderRadius: 6,
+             background: isOpen ? '#4f46e5' : '#f1f5f9',
+             color: isOpen ? '#ffffff' : '#64748b',
+             boxShadow: isOpen ? '0 2px 4px rgba(79,70,229,0.25)' : 'none',
+             transition: 'all 0.15s ease'
+            }}
+           >
+            {isOpen ? <ChevronDown size={14} strokeWidth={2.5} /> : <ChevronRight size={14} />}
            </div>
 
            {/* 2. Order Code + Customer Subscript */}
@@ -1179,7 +1200,15 @@ export default function OrdersPage() {
           </div>
 
         {isOpen && (
-         <div style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0', padding: '16px 20px' }}>
+         <div
+          style={{
+           background: '#f8faff',
+           borderTop: '1px solid #e0e7ff',
+           borderLeft: '4px solid #4f46e5',
+           padding: '16px 20px',
+           boxShadow: 'inset 0 2px 4px rgba(79,70,229,0.02)'
+          }}
+         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
            <div style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Partner Work Orders ({subs.length})</span>
