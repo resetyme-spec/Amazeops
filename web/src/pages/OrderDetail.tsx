@@ -859,6 +859,11 @@ export default function OrderDetail() {
           <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
             {customerLabel(customer.name || 'Unknown', customer.category)}
             <span style={{ color: '#9ca3af', fontSize: 13 }}>{customer.phone || '—'}</span>
+            {(customer.city || order.city) && (
+              <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
+                📍 {customer.city || order.city}{customer.pincode || order.pincode ? ` (${customer.pincode || order.pincode})` : ''}
+              </span>
+            )}
             <span style={{ background: '#f3f4f6', color: '#9ca3af', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>{customer.category || '—'}</span>
             {careBadge(order.careCategory)}
             {(() => {

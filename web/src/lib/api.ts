@@ -53,6 +53,8 @@ function normalizeOrder(raw: any): any {
   raw.customer?.phone || raw.client?.phone || '';
  const customerCategory = raw.customerCategory || raw.customer_category || raw.clientCategory || raw.client_category || raw.tier || raw.plan ||
   (typeof raw.customer === 'string' ? 'Regular' : (raw.customer?.category || raw.customer?.tier || raw.client?.category || 'Regular'));
+ const customerCity = raw.city || raw.customer_city || raw.customerCity || raw.customer?.city || '';
+ const customerPincode = raw.pincode || raw.pin_code || raw.pinCode || raw.postal_code || raw.customer?.pincode || '';
 
  // Debug: log first order's raw fields to understand the format
  if (!raw._dbgLogged) {
@@ -67,10 +69,14 @@ function normalizeOrder(raw: any): any {
   orderId: String(raw.order_no || raw.orderNumber || raw.order_number || raw.orderId || raw.order_code || raw.id || raw._id || `ORD-${Date.now()}`),
   orderNumber: String(raw.order_no || raw.orderNumber || raw.order_number || raw.orderId || raw.order_code || raw.id || raw._id || `ORD-${Date.now()}`),
   status: String(raw.status || raw.orderStatus || raw.state || 'RECEIVED'),
+  city: customerCity,
+  pincode: customerPincode,
   customer: {
    name: customerName,
    category: customerCategory,
    phone: customerPhone,
+   city: customerCity,
+   pincode: customerPincode,
   },
   garments: Array.isArray(raw.garments) ? raw.garments.map((g: any) => {
    const gc = typeof g.garmentCategory === 'object' && g.garmentCategory !== null ? (g.garmentCategory.name || g.garmentCategory.code || 'Normal') : (g.garmentCategory || g.garmentCategory === 0 ? String(g.garmentCategory) : (g.category || g.tier || 'Normal'));

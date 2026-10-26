@@ -682,7 +682,9 @@ export default function OrdersPage() {
   const subs = subOrdersByOrder.get(displayId) || [];
   const status = deriveStatus(o, subs);
   const q = search.toLowerCase();
-  const matchSearch = !q || displayId.toLowerCase().includes(q) || cName.toLowerCase().includes(q) || cPhone.includes(q);
+  const cCity = customer.city || o.city || '';
+  const cPin = customer.pincode || o.pincode || '';
+  const matchSearch = !q || displayId.toLowerCase().includes(q) || cName.toLowerCase().includes(q) || cPhone.includes(q) || cCity.toLowerCase().includes(q) || cPin.includes(q);
   const matchStatus = !statusFilter || (statusFilter === 'READY_FOR_DELIVERY' ? (status === 'READY_FOR_DELIVERY' || o.deliveryStatus === 'READY_FOR_DELIVERY') : statusFilter === 'QC_APPROVED' ? (status === 'QC_APPROVED' || o.qcStatus === 'QC_APPROVED') : status === statusFilter);
   return matchSearch && matchStatus;
  });
@@ -765,9 +767,14 @@ export default function OrdersPage() {
           {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
          </div>
          <Link to={`/orders/${displayId}`} className="link" style={{ fontWeight: 600, fontSize: 14, fontFamily: 'monospace', color: '#4f46e5', minWidth: 100 }} onClick={e => e.stopPropagation()}>{displayId}</Link>
-         <div style={{ minWidth: 130, maxWidth: 160, flexShrink: 0 }}>
+         <div style={{ minWidth: 140, maxWidth: 190, flexShrink: 0 }}>
           {customerLabel(customer.name || '—', customer.category)}
           <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 1 }}>{customer.phone || '—'}</div>
+          {(customer.city || order.city) && (
+           <div style={{ fontSize: 11, color: '#4f46e5', marginTop: 2, fontWeight: 500 }}>
+            📍 {customer.city || order.city}{customer.pincode || order.pincode ? ' (' + (customer.pincode || order.pincode) + ')' : ''}
+           </div>
+          )}
          </div>
 
          {/* Middle Section: Sub-Orders / Partner Status Breakdown */}

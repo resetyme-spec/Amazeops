@@ -1,3 +1,5 @@
+import { db } from '../lib/firebase';
+import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Plus, Edit2, Trash2, X } from 'lucide-react';
 import { callApi, isApiConfigured } from '../lib/api';
@@ -25,10 +27,23 @@ export default function ServicesPage() {
  useEffect(() => { loadServices(); }, []);
 
  async function loadServices() {
-  if (!isApiConfigured()) { setLoading(false); return; }
+  setLoading(true);
   try {
-   const data = await callApi<any>('/api/services');
-   const list = (data.services || []).map((s: any) => ({ id: s.id, ...s } as Service));
+   let list: Service[] = [];
+   try {
+    const snap = await getDocs(collection(db, 'services'));
+    if (!snap.empty) {
+     list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+    }
+   } catch (e) {}
+
+   if (!list.length) {
+    try {
+     const data = await callApi<any>('/api/services');
+     list = (data.services || []).map((s: any) => ({ id: s.id, ...s } as Service));
+    } catch (e) {}
+   }
+
    setServices(list);
   } catch (e) { console.error(e); }
   setLoading(false);
@@ -66,11 +81,17 @@ export default function ServicesPage() {
     active: form.active,
    };
 
-   if (editingId) {
-    await callApi(`/api/services/${editingId}`, { method: 'PUT', body: JSON.stringify(data) });
-   } else {
-    await callApi('/api/services', { method: 'POST', body: JSON.stringify(data) });
-   }
+   const serviceId = editingId || doc(collection(db, 'services')).id;
+   try {
+    await setDoc(doc(db, 'services', serviceId), { ...data, id: serviceId }, { merge: true });
+   } catch (err) {}
+   try {
+    if (editingId) {
+     await callApi(`/api/services/${editingId}`, { method: 'PUT', body: JSON.stringify(data) });
+    } else {
+     await callApi('/api/services', { method: 'POST', body: JSON.stringify({ ...data, id: serviceId }) });
+    }
+   } catch (err) {}
 
    setShowForm(false);
    resetForm();
@@ -97,16 +118,7 @@ export default function ServicesPage() {
   }
  }
 
- if (!isApiConfigured()) {
-  return (
-  <div className="page">
-   <div className="page-header"><div><h1>Services</h1><p className="page-subtitle">Manage services mapped from AmazeFab</p></div></div>
-   <div style={{ textAlign: 'center', padding: 60 }}>
-    <p className="text-muted">Connect your API in Settings to manage services.</p>
-   </div>
-  </div>
-  );
- }
+
 
  if (loading) return <div className="loading-screen"><div className="loading-spinner" /></div>;
 

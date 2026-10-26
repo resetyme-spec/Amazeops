@@ -5,6 +5,8 @@ export interface CustomerInfo {
  phone: string;
  email?: string;
  category: string;
+ city?: string;
+ pincode?: string;
 }
 
 export interface GarmentInfo {
@@ -58,6 +60,8 @@ export interface Order {
  status: string;
  priority?: string;
  qcStatus?: string;
+ city?: string;
+ pincode?: string;
  deliveryStatus?: string;
  deliveryInitiatedAt?: string;
  deliveryInitiatedBy?: string;

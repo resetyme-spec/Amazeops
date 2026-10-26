@@ -113,10 +113,14 @@ app.post('/api/orders', checkApiKey, async (req, res) => {
   orderId,
   orderNumber: orderId,
   customer: {
-   name: data.customer_name || data.customerName || 'Unknown',
-   phone: data.customer_phone || data.customerPhone || '—',
-   category: data.customer_category || data.customerCategory || 'RETAIL',
+   name: data.customer_name || data.customerName || (data.customer && data.customer.name) || 'Unknown',
+   phone: data.customer_phone || data.customerPhone || (data.customer && data.customer.phone) || '—',
+   category: data.customer_category || data.customerCategory || (data.customer && data.customer.category) || 'RETAIL',
+   city: data.city || data.customer_city || data.customerCity || (data.customer && (data.customer.city || data.customer.customerCity)) || '',
+   pincode: data.pincode || data.pin_code || data.pinCode || data.postal_code || (data.customer && (data.customer.pincode || data.customer.pin_code || data.customer.postal_code)) || '',
   },
+  city: data.city || data.customer_city || data.customerCity || (data.customer && (data.customer.city || data.customer.customerCity)) || '',
+  pincode: data.pincode || data.pin_code || data.pinCode || data.postal_code || (data.customer && (data.customer.pincode || data.customer.pin_code || data.customer.postal_code)) || '',
   careCategory: data.care_category || data.careCategory || 'Normal',
   garments: (data.garments || []).map((g, i) => ({
    garmentId: g.garment_id_code || g.garmentId || `GAR-${orderId}-${i + 1}`,
@@ -171,7 +175,112 @@ app.get('/api/stats', checkApiKey, (req, res) => {
 
 // Other endpoints
 app.get('/api/garments', checkApiKey, (req, res) => res.json({ garments: [] }));
-app.get('/api/services', checkApiKey, (req, res) => res.json({ services }));
+// Function to seed initial services in Firestore if empty
+async function seedDefaultServices() {
+ if (!db) return;
+ try {
+  const snap = await db.collection('services').get();
+  if (snap.empty) {
+   console.log('[Dummy App] Seeding default services to Cloud Firestore...');
+   for (const s of services) {
+    await db.collection('services').doc(s.id).set(s, { merge: true });
+   }
+   console.log('[Dummy App] Default services seeded successfully!');
+  }
+ } catch (err) {
+  console.warn('[Dummy App] Service seed check warning:', err.message);
+ }
+}
+setTimeout(seedDefaultServices, 1000);
+
+// Services API Endpoints (Firestore-backed)
+app.get('/api/services', checkApiKey, async (req, res) => {
+ if (db) {
+  try {
+   const snap = await db.collection('services').get();
+   if (!snap.empty) {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return res.json({ services: list });
+   }
+  } catch (err) {}
+ }
+ res.json({ services });
+});
+
+app.post('/api/services', checkApiKey, async (req, res) => {
+ const data = req.body;
+ const svcId = data.id || `SVC-${String(nextServiceId++).padStart(3, '0')}`;
+ const svc = {
+  id: svcId,
+  name: data.name,
+  code: data.code || '',
+  amazeFabServiceId: data.amazeFabServiceId || data.code || `AMF-${(data.name || 'SVC').slice(0, 3).toUpperCase()}`,
+  description: data.description || '',
+  goldRate: Number(data.goldRate) || 0,
+  yellowRate: Number(data.yellowRate) || 0,
+  blueRate: Number(data.blueRate) || 0,
+  active: data.active !== false,
+  createdAt: new Date().toISOString()
+ };
+ const existingIdx = services.findIndex(s => s.id === svcId);
+ if (existingIdx >= 0) {
+  services[existingIdx] = svc;
+ } else {
+  services.push(svc);
+ }
+ if (db) {
+  try { await db.collection('services').doc(svcId).set(svc, { merge: true }); } catch (e) {}
+ }
+ res.status(201).json({ success: true, service: svc });
+});
+
+app.put('/api/services/:id', checkApiKey, async (req, res) => {
+ const id = req.params.id;
+ const data = req.body;
+ const idx = services.findIndex(s => s.id === id);
+ const updated = { ...(services[idx] || {}), ...data, id, updatedAt: new Date().toISOString() };
+ if (idx >= 0) services[idx] = updated;
+ else services.push(updated);
+ if (db) {
+  try { await db.collection('services').doc(id).set(updated, { merge: true }); } catch (e) {}
+ }
+ res.json({ success: true, service: updated });
+});
+
+app.delete('/api/services/:id', checkApiKey, async (req, res) => {
+ const id = req.params.id;
+ services = services.filter(s => s.id !== id);
+ if (db) {
+  try { await db.collection('services').doc(id).delete(); } catch (e) {}
+ }
+ res.json({ success: true, message: 'Service deleted' });
+});
+
+// Order status update endpoint (syncs Firestore & notifies Customer App)
+app.patch('/api/orders/:id/status', checkApiKey, async (req, res) => {
+ const id = req.params.id;
+ const { status } = req.body;
+ if (!status) return res.status(400).json({ error: 'Status is required' });
+ const now = new Date().toISOString();
+ if (db) {
+  try {
+   await db.collection('orders').doc(id).set({ status, updatedAt: now }, { merge: true });
+  } catch (e) {}
+ }
+ const order = orders.find(o => o.id === id || o.orderId === id);
+ if (order) {
+  order.status = status;
+  order.updatedAt = now;
+ }
+ try {
+  await fetch(`http://localhost:5000/api/orders/${encodeURIComponent(id)}/status`, {
+   method: 'PATCH',
+   headers: { 'Content-Type': 'application/json', 'x-api-key': 'amaze-fab-super-admin-key-2026' },
+   body: JSON.stringify({ status })
+  });
+ } catch (e) {}
+ res.json({ success: true, id, status });
+});
 app.get('/api/categories', checkApiKey, (req, res) => res.json({ categories: customerCategories }));
 app.get('/api/invoices', checkApiKey, (req, res) => res.json({ invoices: [] }));
 app.get('/api/critical-cases', checkApiKey, (req, res) => res.json({ cases: [] }));
