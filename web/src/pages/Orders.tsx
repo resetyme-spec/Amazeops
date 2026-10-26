@@ -223,6 +223,81 @@ function buildOrderTimeline(order: Order, subs: SubOrder[], qcRecord?: any, effe
  return [step1, step2, step3, step4, step5, step6, step7];
 }
 
+function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): TimelineStep[] {
+ const soStatus = (so.status || '').toUpperCase();
+ const isDelivered = soStatus === 'DELIVERED' || soStatus === 'COMPLETED';
+ const isReady = isDelivered || soStatus === 'READY_FOR_DELIVERY' || (so as any).deliveryStatus === 'READY_FOR_DELIVERY';
+ const isQcApproved = isReady || soStatus === 'QC_APPROVED' || (so as any).qcStatus === 'QC_APPROVED' || qcRecord?.status === 'QC_APPROVED';
+ const isQcRejected = soStatus === 'QC_REJECTED' || (so as any).qcStatus === 'QC_REJECTED' || qcRecord?.status === 'QC_REJECTED';
+ const isQcSubmitted = isQcApproved || isQcRejected || soStatus === 'QC_PENDING' || soStatus === 'QC_SENT' || !!(so as any)?.qcSubmittedAt || (qcRecord && (qcRecord.subOrderId === so.id || qcRecord.orderId === so.id));
+ const isInProcess = isQcSubmitted || soStatus === 'IN_PROCESS' || !!(so as any)?.acceptedAt;
+
+ const fmt = (ts?: string | Date | null) => formatTimeFrame(ts);
+ const assignedTime = so.createdAt || order.createdAt;
+ const acceptedTime = (so as any)?.acceptedAt || (isInProcess ? so.updatedAt : null);
+ const qcSubmittedTime = qcRecord?.submittedAt || (so as any)?.qcSubmittedAt || (isQcSubmitted ? so.updatedAt : null);
+ const qcApprovedTime = qcRecord?.approvedAt || (isQcApproved ? so.updatedAt : (isQcRejected ? qcRecord?.rejectedAt || so.updatedAt : null));
+ const readyTime = (so as any)?.deliveryInitiatedAt || (isReady ? so.updatedAt : null);
+ const deliveredTime = (so as any)?.deliveredAt || (isDelivered ? so.updatedAt : null);
+
+ return [
+  {
+   id: 'assigned',
+   stepNum: 1,
+   title: 'Assigned',
+   description: `${so.partnerName || 'Partner'} (${so.partnerCode})`,
+   timeframe: fmt(assignedTime),
+   status: 'COMPLETED',
+   badgeText: 'Done',
+  },
+  {
+   id: 'in_process',
+   stepNum: 2,
+   title: 'Accepted & Processing',
+   description: isInProcess ? 'Garments in processing' : 'Partner to accept order',
+   timeframe: isInProcess ? fmt(acceptedTime) : undefined,
+   status: (isQcSubmitted || isQcApproved || isReady || isDelivered) ? 'COMPLETED' : isInProcess ? 'IN_PROGRESS' : 'PENDING',
+   badgeText: (isQcSubmitted || isQcApproved || isReady || isDelivered) ? 'Done' : isInProcess ? 'In Progress' : 'Pending',
+  },
+  {
+   id: 'qc_submitted',
+   stepNum: 3,
+   title: 'QC Submitted',
+   description: isQcSubmitted ? (qcRecord?.photos?.length ? `${qcRecord.photos.length} photos uploaded` : 'Inspection submitted') : 'Pending inspection',
+   timeframe: isQcSubmitted ? fmt(qcSubmittedTime) : undefined,
+   status: (isQcApproved || isReady || isDelivered) ? 'COMPLETED' : isQcSubmitted ? 'IN_PROGRESS' : 'PENDING',
+   badgeText: (isQcApproved || isReady || isDelivered) ? 'Done' : isQcSubmitted ? 'Under Review' : 'Pending',
+  },
+  {
+   id: 'qc_verified',
+   stepNum: 4,
+   title: isQcRejected ? 'QC Rejected' : isQcApproved ? 'QC Approved' : 'QC Verified',
+   description: isQcRejected ? (qcRecord?.rejectionReason || 'Defects found - re-work') : isQcApproved ? `Verified by ${qcRecord?.approvedBy || 'Admin'}` : 'Admin verification',
+   timeframe: (isQcApproved || isQcRejected) ? fmt(qcApprovedTime) : undefined,
+   status: isQcRejected ? 'REJECTED' : isQcApproved ? 'COMPLETED' : isQcSubmitted ? 'IN_PROGRESS' : 'PENDING',
+   badgeText: isQcRejected ? 'Rejected' : isQcApproved ? 'Approved' : isQcSubmitted ? 'Reviewing' : 'Pending',
+  },
+  {
+   id: 'ready_delivery',
+   stepNum: 5,
+   title: 'Ready to Deliver',
+   description: isReady ? 'Packed & ready for dispatch' : 'Pending QC completion',
+   timeframe: isReady ? fmt(readyTime) : undefined,
+   status: isDelivered ? 'COMPLETED' : isReady ? 'IN_PROGRESS' : 'PENDING',
+   badgeText: isDelivered ? 'Done' : isReady ? 'Ready' : 'Pending',
+  },
+  {
+   id: 'delivered',
+   stepNum: 6,
+   title: 'Delivered',
+   description: isDelivered ? 'Delivered to customer' : 'Customer delivery pending',
+   timeframe: isDelivered ? fmt(deliveredTime) : undefined,
+   status: isDelivered ? 'COMPLETED' : 'PENDING',
+   badgeText: isDelivered ? 'Delivered' : 'Pending',
+  },
+ ];
+}
+
 function deriveStatus(order: Order, subs: SubOrder[]): string {
  const oStatus = (order.status || '').toUpperCase();
  const oDeliv = ((order as any).deliveryStatus || (order as any).delivery_status || '').toUpperCase();
@@ -1104,210 +1179,223 @@ export default function OrdersPage() {
           </div>
 
         {isOpen && (
-         <div style={{ background: '#f9fafb', borderTop: '1px solid #e5e7eb', padding: '18px 20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
-           <div>
-            <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600, marginBottom: 12 }}>Sub-Orders ({subs.length})</div>
-            {subs.length === 0 ? (
-             <div style={{ color: '#9ca3af', fontSize: 13 }}>No sub-orders yet.</div>
-            ) : (
-             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {subs.map((so) => {
-               const soGarments = garments.filter(g => so.garmentIds.includes(g.garmentId));
-               const primaryCat = so.garmentCategory?.split(',')[0] || '';
-               const color = tierColor[primaryCat] || '#6b7280';
-               const bg = tierBg[primaryCat] || '#f3f4f6';
-               const total = soGarments.length || 1;
-               const isDone = so.status === 'COMPLETED' || so.status === 'DELIVERED' || so.status === 'READY_FOR_DELIVERY' || so.status === 'QC_APPROVED';
-               const done = isDone ? total : so.status === 'IN_PROCESS' || so.status === 'QC_PENDING' || so.status === 'QC_SENT' ? Math.max(1, Math.round(total / 2)) : 0;
-               const pct = Math.round((done / total) * 100);
-               return (
-                <div key={so.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
-                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>{so.subOrderCode}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                   <div style={{ fontWeight: 600, fontSize: 14, color: '#111827' }}>{so.partnerName || 'Unassigned'}</div>
-                   {(() => {
-                    const soCritical = soGarments.filter(g => isGarmentCritical(g)).length;
-                    const soReas = soGarments.filter(g => isGarmentReassigned(g)).length;
-                    return (
-                     <>
-                      {soCritical > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#dc2626', padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}><AlertTriangle size={10} /> {soCritical} Critical</span>}
-                      {soReas > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}><RefreshCw size={10} /> {soReas} Reassigned</span>}
-                     </>
-                    );
-                   })()}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
-                   <span>{so.partnerCode}</span>
-                   {primaryCat && <span style={{ background: bg, color, padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>{primaryCat}</span>}
-                   <span style={{ color: '#9ca3af' }}>· {so.garmentIds.length} garment{so.garmentIds.length !== 1 ? 's' : ''}</span>
-                  </div>
-                 </div>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button onClick={() => setViewModal({ open: true, subOrder: so, garments: soGarments, order: order })} style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', fontSize: 12, color: '#4b5563', cursor: 'pointer' }}>View</button>
-                  <div style={{ width: 130, flexShrink: 0 }}>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280', marginBottom: 4 }}>
-                    <span style={{ fontWeight: 500 }}>{done}/{total} done</span>
-                    <span style={{ fontWeight: 600, color: pct === 100 ? '#16a34a' : '#4b5563' }}>{pct}%</span>
-                   </div>
-                   <div style={{ height: 7, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#16a34a' : color, borderRadius: 4, transition: 'width 0.3s' }}></div>
-                   </div>
-                   <div style={{ marginTop: 7, textAlign: 'right' }}>
-                    {(() => {
-                     const b = getBadgeInfo(so.status);
-                     return <span className="badge" style={{ fontSize: 10, padding: '2px 8px', background: b.bg, color: b.color, border: `1px solid ${b.border}`, fontWeight: 600 }}>{b.label}</span>;
-                    })()}
-                   </div>
-                  </div>
-                 </div>
-                </div>
-               );
-              })}
-             </div>
-            )}
+         <div style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0', padding: '16px 20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+           <div style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>Partner Work Orders ({subs.length})</span>
+            <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500, textTransform: 'none' }}>• Individual partner progress & quality journey</span>
            </div>
+          </div>
 
-           {/* Order Lifecycle Progress Timeline */}
-           {(() => {
-            const qcRecord = qcRecordsByOrder.get(order.id) || qcRecordsByOrder.get(displayId) || (subs[0] ? qcRecordsByOrder.get(subs[0].id) : null);
-            const currentDerivedStatus = deriveStatus(order, subs);
-            const steps = buildOrderTimeline(order, subs, qcRecord, currentDerivedStatus);
-            const completedCount = steps.filter(s => s.status === 'COMPLETED').length;
-            const totalSteps = steps.length;
-            const overallStepPct = Math.round((completedCount / totalSteps) * 100);
+          {subs.length === 0 ? (
+           <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+            No partners assigned yet for this order.
+           </div>
+          ) : (
+           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {subs.map((so) => {
+             const soGarments = garments.filter(g => so.garmentIds.includes(g.garmentId));
+             const primaryCat = so.garmentCategory?.split(',')[0] || '';
+             const color = tierColor[primaryCat] || '#4f46e5';
+             const bg = tierBg[primaryCat] || '#f3f4f6';
+             const total = soGarments.length || 1;
+             const isDone = so.status === 'COMPLETED' || so.status === 'DELIVERED' || so.status === 'READY_FOR_DELIVERY' || so.status === 'QC_APPROVED';
+             const done = isDone ? total : so.status === 'IN_PROCESS' || so.status === 'QC_PENDING' || so.status === 'QC_SENT' ? Math.max(1, Math.round(total / 2)) : 0;
+             const pct = Math.round((done / total) * 100);
 
-            const totalG = garments.length;
-            const isFinishedStatus = currentDerivedStatus === 'COMPLETED' || currentDerivedStatus === 'DELIVERED' || currentDerivedStatus === 'READY_FOR_DELIVERY' || currentDerivedStatus === 'QC_APPROVED';
-            const doneG = isFinishedStatus
-             ? totalG
-             : subs.filter(s => s.status === 'COMPLETED' || s.status === 'DELIVERED' || s.status === 'READY_FOR_DELIVERY' || s.status === 'QC_APPROVED').reduce((sum, so) => sum + so.garmentIds.length, 0);
-            const garmentPct = totalG > 0 ? Math.round((doneG / totalG) * 100) : 0;
+             // Find QC record for this sub-order or order
+             const soQcRecord = qcRecordsByOrder.get(so.id) || qcRecordsByOrder.get(so.subOrderCode) || qcRecordsByOrder.get(order.id) || qcRecordsByOrder.get(displayId);
+             const partnerSteps = buildPartnerTimeline(so, order, soQcRecord);
+             const completedSteps = partnerSteps.filter(s => s.status === 'COMPLETED').length;
+             const totalSteps = partnerSteps.length;
+             const partnerPct = Math.round((completedSteps / totalSteps) * 100);
 
-            return (
-             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '18px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
-               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                 <span style={{ fontSize: 11, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Order Lifecycle Progress</span>
-                 <span style={{ background: overallStepPct === 100 ? '#dcfce7' : '#e0e7ff', color: overallStepPct === 100 ? '#166534' : '#4338ca', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10 }}>
-                  {completedCount} of {totalSteps} Steps Complete ({overallStepPct}%)
-                 </span>
-                </div>
-                <div style={{ fontSize: 13, color: '#4b5563', marginTop: 4 }}>
-                 Garments: <strong style={{ color: garmentPct === 100 ? '#16a34a' : '#111827' }}>{doneG} of {totalG} garments processed ({garmentPct}%)</strong>
-                </div>
-               </div>
-               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {currentDerivedStatus === 'READY_FOR_DELIVERY' && (
-                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
-                  <Truck size={14} /> Ready for Customer Delivery
-                 </span>
-                )}
-                {currentDerivedStatus === 'QC_APPROVED' && (
-                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
-                  <CheckCircle2 size={14} /> QC Verification Passed
-                 </span>
-                )}
-               </div>
-              </div>
-
-              {/* Progress bar */}
-              <div style={{ height: 8, background: '#f3f4f6', borderRadius: 4, overflow: 'hidden', marginBottom: 18 }}>
-               <div style={{
-                height: '100%',
-                width: `${overallStepPct}%`,
-                background: overallStepPct === 100 ? '#16a34a' : 'linear-gradient(90deg, #4f46e5 0%, #10b981 100%)',
-                borderRadius: 4,
-                transition: 'width 0.4s ease-in-out'
-               }}></div>
-              </div>
-
-              {/* Step cards with timestamps */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
-               {steps.map((st) => {
-                const isDone = st.status === 'COMPLETED';
-                const isInProg = st.status === 'IN_PROGRESS';
-                const isRej = st.status === 'REJECTED';
-
-                const cardBorder = isDone ? '#bbf7d0' : isInProg ? '#93c5fd' : isRej ? '#fecaca' : '#e5e7eb';
-                const cardBg = isDone ? '#f0fdf4' : isInProg ? '#eff6ff' : isRej ? '#fef2f2' : '#f9fafb';
-                const iconColor = isDone ? '#16a34a' : isInProg ? '#2563eb' : isRej ? '#dc2626' : '#9ca3af';
-                const badgeBg = isDone ? '#dcfce7' : isInProg ? '#dbeafe' : isRej ? '#fee2e2' : '#e5e7eb';
-                const badgeColor = isDone ? '#166534' : isInProg ? '#1e40af' : isRej ? '#991b1b' : '#6b7280';
-
-                return (
-                 <div key={st.id} style={{
-                  background: cardBg,
-                  border: `1px solid ${cardBorder}`,
-                  borderRadius: 8,
-                  padding: '12px 10px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  minHeight: 120,
-                  transition: 'all 0.2s ease',
-                 }}>
-                  <div>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <div style={{
-                     width: 22,
-                     height: 22,
-                     borderRadius: '50%',
-                     background: isDone ? '#16a34a' : isInProg ? '#2563eb' : isRej ? '#dc2626' : '#d1d5db',
-                     color: '#fff',
-                     fontSize: 11,
-                     fontWeight: 700,
-                     display: 'flex',
-                     alignItems: 'center',
-                     justifyContent: 'center',
-                    }}>
-                     {isDone ? <Check size={12} strokeWidth={3} /> : isRej ? <XCircle size={12} /> : st.stepNum}
-                    </div>
-                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', padding: '2px 5px', borderRadius: 4, background: badgeBg, color: badgeColor, letterSpacing: '0.03em' }}>
-                     {st.badgeText}
+             return (
+              <div
+               key={so.id}
+               style={{
+                background: '#fff',
+                border: '1px solid #e2e8f0',
+                borderLeft: `4px solid ${color}`,
+                borderRadius: 10,
+                overflow: 'hidden',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+               }}
+              >
+               {/* Partner Card Top Header */}
+               <div style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexWrap: 'wrap' }}>
+                 <div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{so.subOrderCode}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                   <span style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{so.partnerName || 'Unassigned'}</span>
+                   <span style={{ fontSize: 11, color: '#64748b', background: '#f1f5f9', padding: '2px 7px', borderRadius: 4, fontFamily: 'monospace', fontWeight: 600 }}>{so.partnerCode}</span>
+                   {primaryCat && (
+                    <span style={{ background: bg, color, padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, border: `1px solid ${color}35` }}>
+                     {primaryCat}
                     </span>
-                   </div>
-
-                   <div style={{ fontWeight: 700, fontSize: 12, color: isDone ? '#14532d' : isInProg ? '#1e3a8a' : isRej ? '#7f1d1d' : '#374151', marginBottom: 3, lineHeight: 1.3 }}>
-                    {st.title}
-                   </div>
-
-                   <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 8, lineHeight: 1.3 }}>
-                    {st.description}
-                   </div>
-                  </div>
-
-                  <div style={{
-                   borderTop: `1px solid ${isDone ? '#dcfce7' : isInProg ? '#bfdbfe' : isRej ? '#fecaca' : '#e5e7eb'}`,
-                   paddingTop: 6,
-                   marginTop: 'auto',
-                   display: 'flex',
-                   alignItems: 'center',
-                   gap: 4,
-                  }}>
-                   <Clock size={11} color={st.timeframe ? iconColor : '#9ca3af'} />
-                   <span style={{
-                    fontSize: 10,
-                    fontWeight: st.timeframe ? 600 : 400,
-                    color: st.timeframe ? (isDone ? '#15803d' : '#1e40af') : '#9ca3af',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                   }}>
-                    {st.timeframe || 'Pending'}
+                   )}
+                   <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>
+                    • {so.garmentIds.length} garment{so.garmentIds.length !== 1 ? 's' : ''}
                    </span>
                   </div>
                  </div>
-                );
-               })}
+
+                 {/* Critical / Reassigned indicators */}
+                 {(() => {
+                  const soCritical = soGarments.filter(g => isGarmentCritical(g)).length;
+                  const soReas = soGarments.filter(g => isGarmentReassigned(g)).length;
+                  return (
+                   <div style={{ display: 'flex', gap: 6 }}>
+                    {soCritical > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#dc2626', padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}><AlertTriangle size={10} /> {soCritical} Critical</span>}
+                    {soReas > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}><RefreshCw size={10} /> {soReas} Reassigned</span>}
+                   </div>
+                  );
+                 })()}
+                </div>
+
+                {/* Right Side Actions & Status */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                 {/* Garment progress */}
+                 <div style={{ textAlign: 'right', minWidth: 95 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginBottom: 3 }}>
+                   <span>{done}/{total} garments</span> • <strong style={{ color: pct === 100 ? '#16a34a' : '#0f172a' }}>{pct}%</strong>
+                  </div>
+                  <div style={{ height: 5, width: 100, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
+                   <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#16a34a' : color, borderRadius: 3, transition: 'width 0.3s' }}></div>
+                  </div>
+                 </div>
+
+                 {/* Status Pill */}
+                 {(() => {
+                  const b = getBadgeInfo(so.status);
+                  return (
+                   <span style={{ fontSize: 11, padding: '4px 10px', background: b.bg, color: b.color, border: `1px solid ${b.border}`, borderRadius: 6, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.color }} />
+                    {b.label}
+                   </span>
+                  );
+                 })()}
+
+                 {/* View Modal Trigger */}
+                 <button
+                  onClick={() => setViewModal({ open: true, subOrder: so, garments: soGarments, order: order })}
+                  style={{
+                   padding: '5px 12px',
+                   borderRadius: 6,
+                   border: '1px solid #cbd5e1',
+                   background: '#fff',
+                   fontSize: 12,
+                   fontWeight: 600,
+                   color: '#4338ca',
+                   cursor: 'pointer',
+                   display: 'inline-flex',
+                   alignItems: 'center',
+                   gap: 4,
+                   boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                  }}
+                 >
+                  View Details
+                 </button>
+                </div>
+               </div>
+
+               {/* Partner In-Card Lifecycle Stepper */}
+               <div style={{ padding: '14px 18px', background: '#fafbfc' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                 <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
+                  Partner Progress Lifecycle
+                 </div>
+                 <div style={{ fontSize: 11, color: completedSteps === totalSteps ? '#166534' : '#4338ca', fontWeight: 600 }}>
+                  {completedSteps} of {totalSteps} steps complete ({partnerPct}%)
+                 </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
+                 {partnerSteps.map((st) => {
+                  const isDone = st.status === 'COMPLETED';
+                  const isInProg = st.status === 'IN_PROGRESS';
+                  const isRej = st.status === 'REJECTED';
+
+                  const cardBorder = isDone ? '#bbf7d0' : isInProg ? '#bfdbfe' : isRej ? '#fecaca' : '#e2e8f0';
+                  const cardBg = isDone ? '#f0fdf4' : isInProg ? '#eff6ff' : isRej ? '#fef2f2' : '#fff';
+                  const badgeBg = isDone ? '#dcfce7' : isInProg ? '#dbeafe' : isRej ? '#fee2e2' : '#f1f5f9';
+                  const badgeColor = isDone ? '#166534' : isInProg ? '#1e40af' : isRej ? '#991b1b' : '#64748b';
+
+                  return (
+                   <div
+                    key={st.id}
+                    style={{
+                     background: cardBg,
+                     border: `1px solid ${cardBorder}`,
+                     borderRadius: 8,
+                     padding: '10px 10px',
+                     display: 'flex',
+                     flexDirection: 'column',
+                     justifyContent: 'space-between',
+                     minHeight: 96,
+                     boxShadow: '0 1px 2px rgba(0,0,0,0.01)'
+                    }}
+                   >
+                    <div>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div
+                       style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: '50%',
+                        background: isDone ? '#16a34a' : isInProg ? '#2563eb' : isRej ? '#dc2626' : '#cbd5e1',
+                        color: '#fff',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                       }}
+                      >
+                       {isDone ? <Check size={11} strokeWidth={3} /> : isRej ? <XCircle size={11} /> : st.stepNum}
+                      </div>
+                      <span
+                       style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        padding: '1px 5px',
+                        borderRadius: 4,
+                        background: badgeBg,
+                        color: badgeColor,
+                        letterSpacing: '0.02em',
+                       }}
+                      >
+                       {st.badgeText}
+                      </span>
+                     </div>
+
+                     <div style={{ fontWeight: 700, fontSize: 11, color: isDone ? '#14532d' : isInProg ? '#1e3a8a' : isRej ? '#7f1d1d' : '#1e293b', marginBottom: 2, lineHeight: 1.25 }}>
+                      {st.title}
+                     </div>
+
+                     <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.25 }}>
+                      {st.description}
+                     </div>
+                    </div>
+
+                    <div style={{ borderTop: `1px solid ${isDone ? '#dcfce7' : isInProg ? '#dbeafe' : isRej ? '#fee2e2' : '#f1f5f9'}`, paddingTop: 4, marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                     <Clock size={10} color={st.timeframe ? (isDone ? '#16a34a' : '#2563eb') : '#94a3b8'} />
+                     <span style={{ fontSize: 9, fontWeight: st.timeframe ? 600 : 400, color: st.timeframe ? (isDone ? '#15803d' : '#1e40af') : '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                      {st.timeframe || 'Pending'}
+                     </span>
+                    </div>
+                   </div>
+                  );
+                 })}
+                </div>
+               </div>
               </div>
-             </div>
-            );
-           })()}
-          </div>
+             );
+            })}
+           </div>
+          )}
          </div>
         )}
        </div>
