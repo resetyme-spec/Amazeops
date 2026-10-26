@@ -34,8 +34,10 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.admin_instance = exports.db_instance = exports.api = exports.weeklyPartnerSummary = exports.dailyDeliveryReminder = exports.paymentOnCreate = exports.invoiceOnUpdate = exports.invoiceOnCreate = exports.qcRecordOnCreate = exports.subOrderOnUpdate = exports.subOrderOnCreate = exports.criticalCaseOnUpdate = exports.criticalCaseOnCreate = exports.garmentOnUpdate = exports.garmentOnCreate = exports.orderOnUpdate = exports.orderOnCreate = exports.apiInitializeFirestore = exports.apiRecordPayment = exports.apiApproveInvoice = exports.apiCreateInvoice = exports.apiSubmitQCResult = exports.apiCreateCriticalCase = exports.apiDeleteService = exports.apiUpdateService = exports.apiCreateService = exports.apiDeletePartner = exports.apiUpdatePartner = exports.apiCreatePartner = exports.apiAssignGarmentsToPartner = exports.apiAddGarmentsToOrder = exports.apiCreateOrder = void 0;
+process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || 'amaze-ops';
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const https_1 = require("firebase-functions/v2/https");
 const orderService_1 = require("./services/orderService");
 const callableFunctions_1 = require("./services/callableFunctions");
 // Initialize Firebase Admin — emulator-safe (no production creds)
@@ -164,45 +166,91 @@ exports.weeklyPartnerSummary = functions.pubsub.schedule('0 8 * * 1').onRun(asyn
     }
     return null;
 });
-// ===== PUBLIC REST API FOR EXTERNAL CUSTOMER APP =====
+// ===== PUBLIC REST API FOR EXTERNAL CUSTOMER APP & OPS ENGINE =====
 const API_KEY = 'amaze-fab-super-admin-key-2026';
-exports.api = functions.https.onRequest(async (req, res) => {
+exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, async (req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
     if (req.method === 'OPTIONS') {
         res.status(204).send('');
         return;
     }
-    const key = req.headers['x-api-key'];
-    if (key !== API_KEY) {
-        res.status(401).json({ error: 'Unauthorized: Invalid x-api-key header' });
+    const rawPath = (req.path || '').replace(/^\/api(?:\/v1)?/, '');
+    const cleanPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+    // Health check
+    if (cleanPath === '/health' || cleanPath === '/test-connection' || cleanPath === '/verify') {
+        res.status(200).json({
+            status: 'ok',
+            success: true,
+            message: 'Amaze Ops Serverless API is online and healthy',
+            timestamp: new Date().toISOString()
+        });
         return;
     }
-    const path = req.path;
-    // POST /orders or POST /api/orders
-    if (req.method === 'POST' && (path === '/orders' || path === '/api/orders' || path === '/' || path === '')) {
+    // API Key authentication
+    const key = req.headers['x-api-key'] || req.query.api_key;
+    if (key !== API_KEY) {
+        res.status(401).json({ error: 'Unauthorized: Invalid or missing x-api-key header' });
+        return;
+    }
+    // GET /services
+    if (req.method === 'GET' && cleanPath === '/services') {
+        try {
+            const snap = await db.collection('services').get();
+            const services = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            res.status(200).json({
+                success: true,
+                count: services.length,
+                services,
+                data: services
+            });
+            return;
+        }
+        catch (err) {
+            res.status(500).json({ error: 'Failed to fetch services', details: err.message });
+            return;
+        }
+    }
+    // POST /orders
+    if (req.method === 'POST' && (cleanPath === '/orders' || cleanPath === '/' || cleanPath === '')) {
         try {
             const data = req.body || {};
             const orderId = String(data.order_no || data.orderNo || data.orderId || `ORD-${Date.now()}`);
+            const city = data.city || data.customer_city || data.customerCity || (data.customer && data.customer.city) || '';
+            const pincode = data.pincode || data.pin_code || data.pinCode || data.postal_code || (data.customer && data.customer.pincode) || '';
             const orderPayload = {
                 id: orderId,
                 orderId,
                 orderNumber: orderId,
+                order_no: orderId,
+                customer_name: data.customer_name || data.customerName || (data.customer && data.customer.name) || 'Unknown',
+                customer_phone: data.customer_phone || data.customerPhone || (data.customer && data.customer.phone) || '—',
+                customer_category: data.customer_category || data.customerCategory || (data.customer && data.customer.category) || 'RETAIL',
+                city,
+                pincode,
                 customer: {
-                    name: data.customer_name || data.customerName || 'Unknown',
-                    phone: data.customer_phone || data.customerPhone || '—',
-                    category: data.customer_category || data.customerCategory || 'RETAIL',
+                    name: data.customer_name || data.customerName || (data.customer && data.customer.name) || 'Unknown',
+                    phone: data.customer_phone || data.customerPhone || (data.customer && data.customer.phone) || '—',
+                    category: data.customer_category || data.customerCategory || (data.customer && data.customer.category) || 'RETAIL',
+                    city,
+                    pincode,
                 },
                 careCategory: data.care_category || data.careCategory || 'Normal',
+                care_category: data.care_category || data.careCategory || 'Normal',
                 status: data.status || 'RECEIVED',
+                deliveryStatus: 'PENDING',
                 garments: Array.isArray(data.garments) ? data.garments.map((g, i) => ({
-                    garmentId: g.garment_id_code || g.garmentId || `GAR-${orderId}-${i + 1}`,
+                    garmentId: g.garment_id_code || g.garment_id || g.garmentId || `GAR-${orderId}-${i + 1}`,
+                    garment_id_code: g.garment_id_code || g.garment_id || g.garmentId || `GAR-${orderId}-${i + 1}`,
                     qrCode: g.qr_code || g.qrCode || `QR-${orderId}-${i + 1}`,
+                    qr_code: g.qr_code || g.qrCode || `QR-${orderId}-${i + 1}`,
                     garmentType: g.garment_type || g.garmentType || 'Garment',
-                    category: g.category || 'OTHER',
+                    garment_type: g.garment_type || g.garmentType || 'Garment',
+                    category: g.category || 'GOLD',
                     garmentCategory: g.garment_category || g.garmentCategory || g.category || 'GOLD',
-                    serviceType: g.service_type || g.serviceType || 'Standard',
+                    serviceType: g.service_type || g.serviceType || 'Wash & Iron',
+                    service_type: g.service_type || g.serviceType || 'Wash & Iron',
                     status: 'PENDING',
                 })) : [],
                 createdAt: data.created_at || new Date().toISOString(),
@@ -222,11 +270,29 @@ exports.api = functions.https.onRequest(async (req, res) => {
             return;
         }
     }
-    // GET /orders/:id or GET /api/orders/:id
-    const match = path.match(/^\/?(?:api\/)?orders\/([^/]+)$/);
-    if (req.method === 'GET' && match) {
+    // GET /orders (list all)
+    if (req.method === 'GET' && cleanPath === '/orders') {
         try {
-            const targetId = match[1];
+            const snap = await db.collection('orders').limit(100).get();
+            const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            res.status(200).json({
+                success: true,
+                count: orders.length,
+                orders,
+                data: orders
+            });
+            return;
+        }
+        catch (err) {
+            res.status(500).json({ error: 'Failed to list orders', details: err.message });
+            return;
+        }
+    }
+    // GET /orders/:id (track order)
+    const orderMatch = cleanPath.match(/^\/orders\/([^/]+)$/);
+    if (req.method === 'GET' && orderMatch) {
+        try {
+            const targetId = orderMatch[1];
             let orderDoc = await db.collection('orders').doc(targetId).get();
             if (!orderDoc.exists) {
                 const querySnap = await db.collection('orders').where('orderNumber', '==', targetId).limit(1).get();
@@ -238,9 +304,22 @@ exports.api = functions.https.onRequest(async (req, res) => {
                 res.status(404).json({ error: 'Order not found' });
                 return;
             }
+            const orderData = { id: orderDoc.id, ...orderDoc.data() };
+            const curStatus = orderData.status || 'RECEIVED';
+            const stages = ['RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'COMPLETED', 'DELIVERED'];
+            const curIdx = stages.indexOf(curStatus);
+            const timeline = stages.map((st, idx) => ({
+                stage: st,
+                completed: idx <= curIdx,
+                current: idx === curIdx,
+                timestamp: idx <= curIdx ? (orderData.updatedAt || orderData.createdAt) : null
+            }));
             res.status(200).json({
                 success: true,
-                order: { id: orderDoc.id, ...orderDoc.data() },
+                order: orderData,
+                orderId: orderData.order_no || orderData.id,
+                status: curStatus,
+                timeline
             });
             return;
         }
@@ -249,7 +328,29 @@ exports.api = functions.https.onRequest(async (req, res) => {
             return;
         }
     }
-    res.status(404).json({ error: 'Endpoint not found', path });
+    // PATCH or PUT /orders/:id/status
+    const statusMatch = cleanPath.match(/^\/orders\/([^/]+)(?:\/status)?$/);
+    if ((req.method === 'PATCH' || req.method === 'PUT') && statusMatch) {
+        try {
+            const targetId = statusMatch[1];
+            const newStatus = req.body.status;
+            if (!newStatus) {
+                res.status(400).json({ error: 'Status is required' });
+                return;
+            }
+            await db.collection('orders').doc(targetId).set({
+                status: newStatus,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            res.status(200).json({ success: true, message: `Status updated to ${newStatus}` });
+            return;
+        }
+        catch (err) {
+            res.status(500).json({ error: 'Failed to update status', details: err.message });
+            return;
+        }
+    }
+    res.status(404).json({ error: 'Endpoint not found', path: cleanPath });
 });
 // ===== EXPORTS =====
 exports.db_instance = db;

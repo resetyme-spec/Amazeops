@@ -16,8 +16,11 @@
   "node": "20"
  },
  "dependencies": {
+  "@types/markdown-it": "^14.2.0",
+  "acorn": "^8.19.0",
   "firebase-admin": "^11.11.0",
   "firebase-functions": "^4.9.0",
+  "markdown-it": "^15.0.3",
   "zod": "^3.22.4"
  },
  "devDependencies": {
