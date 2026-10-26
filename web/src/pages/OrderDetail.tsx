@@ -1275,11 +1275,29 @@ export default function OrderDetail() {
 
                           {/* Comments */}
                           {gUpdate.comments ? (
-                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#334155' }}>
+                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#334155', marginBottom: 6 }}>
                               <span style={{ fontWeight: 600, color: '#64748b' }}>Partner Note:</span> {gUpdate.comments}
                             </div>
                           ) : (
-                            <span style={{ color: '#9ca3af', fontSize: 11 }}>No comments</span>
+                            <div style={{ color: '#9ca3af', fontSize: 11, marginBottom: 6 }}>No comments</div>
+                          )}
+
+                          {/* Quality Rating & Solvents */}
+                          {((gUpdate as any)?.garmentQuality || (g as any).garmentQuality) && (
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fef3c7', border: '1px solid #fde68a', color: '#b45309', padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700, marginRight: 6, marginBottom: 4 }}>
+                              <span>{'⭐'.repeat(Number((gUpdate as any)?.garmentQuality || (g as any).garmentQuality || 5))}</span>
+                              <span>{((gUpdate as any)?.garmentQuality || (g as any).garmentQuality)}/5 Quality</span>
+                            </div>
+                          )}
+                          {(((gUpdate as any)?.solvents && (gUpdate as any).solvents.length > 0) || ((g as any).solvents && (g as any).solvents.length > 0)) && (
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
+                              <span style={{ fontSize: 10, color: '#0369a1', fontWeight: 700, alignSelf: 'center' }}>🧪 Solvents:</span>
+                              {(((gUpdate as any)?.solvents || (g as any).solvents || [])).map((s: string, sIdx: number) => (
+                                <span key={sIdx} style={{ fontSize: 10, background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '1px 6px', borderRadius: 10, fontWeight: 600 }}>
+                                  {s}
+                                </span>
+                              ))}
+                            </div>
                           )}
                         </div>
                       ) : (

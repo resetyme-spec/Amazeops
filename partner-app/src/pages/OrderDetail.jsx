@@ -3,12 +3,30 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle2, XCircle, Truck, QrCode, Tag, MessageSquare,
   User, AlertTriangle, ImagePlus, X as XIcon, Camera, Upload, RefreshCw, Eye,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, Star, Droplets
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery } from '../lib/api';
 
 const TIER_COLORS = { GOLD: '#d97706', YELLOW: '#ea580c', ORANGE: '#ea580c', BLUE: '#3b82f6' };
+
+const QUALITY_LABELS = {
+  5: '5/5 — Excellent (Like New)',
+  4: '4/5 — Good (Minimal Wear)',
+  3: '3/5 — Fair (Normal Wear)',
+  2: '2/5 — Average (Minor Fading / Pilling)',
+  1: '1/5 — Heavy Wear / Aged Fabric'
+};
+
+const STANDARD_SOLVENTS = [
+  'Hydrocarbon (DF-2000)',
+  'Perchloroethylene (Perc)',
+  'Liquid Silicone (GreenEarth)',
+  'Wet Cleaning (Water-based)',
+  'Modified Alcohol (Sensene)',
+  'Eco-Solv',
+  'Specialty Spotting Agent',
+];
 
 function careBadge(cat) {
   const c = (cat || 'Normal').toLowerCase();
@@ -57,7 +75,9 @@ export default function OrderDetail() {
     rejection: null,
     brand: '',
     comments: '',
-    photos: { front: '', back: '', other: '' }
+    photos: { front: '', back: '', other: '' },
+    garmentQuality: 5,
+    solvents: []
   });
   const [reQcSubmitting, setReQcSubmitting] = useState(false);
 
@@ -86,6 +106,8 @@ export default function OrderDetail() {
           brand: prev?.brand || g.brand || '',
           comments: prev?.comments || g.comments || '',
           photos: prev?.photos || g.photos || { front: '', back: '', other: '' },
+          garmentQuality: prev?.garmentQuality || g.garmentQuality || 5,
+          solvents: prev?.solvents || g.solvents || [],
         };
       });
       setQcForm(initial);
@@ -153,7 +175,14 @@ export default function OrderDetail() {
           throw new Error(`${triggerReason}. Please complete all mandatory QC details before proceeding. Missing for ${g.garmentId}: ${missing.join(', ')}.`);
         }
       }
-      return { garmentId: g.garmentId, brand: form.brand, comments: form.comments, photos: form.photos };
+      return {
+        garmentId: g.garmentId,
+        brand: form.brand,
+        comments: form.comments,
+        photos: form.photos,
+        garmentQuality: form.garmentQuality || 5,
+        solvents: form.solvents || []
+      };
     });
 
     setActionLoading(true);
@@ -174,7 +203,9 @@ export default function OrderDetail() {
       rejection: rej || {},
       brand: existingForm.brand || garment.brand || '',
       comments: existingForm.comments || '',
-      photos: existingForm.photos || garment.photos || { front: '', back: '', other: '' }
+      photos: existingForm.photos || garment.photos || { front: '', back: '', other: '' },
+      garmentQuality: existingForm.garmentQuality || garment.garmentQuality || 5,
+      solvents: existingForm.solvents || garment.solvents || []
     });
   };
 
@@ -217,6 +248,8 @@ export default function OrderDetail() {
           brand: reQcModal.brand || '',
           comments: reQcModal.comments || '',
           photos: reQcModal.photos || {},
+          garmentQuality: reQcModal.garmentQuality || 5,
+          solvents: reQcModal.solvents || [],
         },
         user
       );
@@ -227,7 +260,9 @@ export default function OrderDetail() {
         rejection: null,
         brand: '',
         comments: '',
-        photos: { front: '', back: '', other: '' }
+        photos: { front: '', back: '', other: '' },
+        garmentQuality: 5,
+        solvents: []
       });
       setSuccessBanner(`Re-QC submitted successfully for ${garmentLabel}!`);
       setTimeout(() => setSuccessBanner(''), 4000);
@@ -641,6 +676,102 @@ export default function OrderDetail() {
                           />
                         </div>
 
+                        {/* Quality of Garment (Star Rating out of 5 stars) */}
+                        <div className="form-group" style={{ marginBottom: 14 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
+                              <Star size={15} color="#f59e0b" fill="#f59e0b" /> Quality of Garment *
+                            </label>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: 12, border: '1px solid #fde68a' }}>
+                              {QUALITY_LABELS[form.garmentQuality || 5]}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: '#fff', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0' }}>
+                            {[1, 2, 3, 4, 5].map((star) => {
+                              const isFilled = (form.garmentQuality || 5) >= star;
+                              return (
+                                <button
+                                  key={star}
+                                  type="button"
+                                  onClick={() => {
+                                    setQcForm({
+                                      ...qcForm,
+                                      [g.garmentId]: { ...form, garmentQuality: star }
+                                    });
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '2px 4px',
+                                    transition: 'transform 0.15s ease',
+                                    transform: isFilled ? 'scale(1.15)' : 'scale(1)'
+                                  }}
+                                  title={`${star} Star${star > 1 ? 's' : ''}`}
+                                >
+                                  <Star
+                                    size={24}
+                                    color={isFilled ? '#f59e0b' : '#cbd5e1'}
+                                    fill={isFilled ? '#f59e0b' : '#f8fafc'}
+                                  />
+                                </button>
+                              );
+                            })}
+                            <span style={{ fontSize: 11, color: '#64748b', marginLeft: 6 }}>
+                              Select 1 to 5 stars
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Solvent Used (Multiple Choices) */}
+                        <div className="form-group" style={{ marginBottom: 14 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
+                              <Droplets size={15} color="#0284c7" /> Solvent Used (Multiple Choices)
+                            </label>
+                            <span style={{ fontSize: 11, color: '#0369a1', fontWeight: 600 }}>
+                              {(form.solvents || []).length > 0 ? `${(form.solvents || []).length} selected` : 'Select multiple'}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, background: '#fff', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0' }}>
+                            {STANDARD_SOLVENTS.map((solv) => {
+                              const isSelected = (form.solvents || []).includes(solv);
+                              return (
+                                <button
+                                  key={solv}
+                                  type="button"
+                                  onClick={() => {
+                                    const current = form.solvents || [];
+                                    const next = isSelected ? current.filter(s => s !== solv) : [...current, solv];
+                                    setQcForm({
+                                      ...qcForm,
+                                      [g.garmentId]: { ...form, solvents: next }
+                                    });
+                                  }}
+                                  style={{
+                                    padding: '5px 11px',
+                                    borderRadius: 18,
+                                    fontSize: 11,
+                                    fontWeight: isSelected ? 700 : 500,
+                                    cursor: 'pointer',
+                                    border: isSelected ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
+                                    background: isSelected ? '#e0f2fe' : '#f8fafc',
+                                    color: isSelected ? '#0369a1' : '#475569',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5,
+                                    transition: 'all 0.15s ease',
+                                    boxShadow: isSelected ? '0 1px 3px rgba(2,132,199,0.15)' : 'none'
+                                  }}
+                                >
+                                  <span style={{ fontSize: 12, fontWeight: 900 }}>{isSelected ? '✓' : '+'}</span>
+                                  <span>{solv}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
                         {/* Comments */}
                         <div className="form-group">
                           <label><MessageSquare size={14} /> Comments</label>
@@ -898,6 +1029,88 @@ export default function OrderDetail() {
                     onChange={e => setReQcModal(prev => ({ ...prev, brand: e.target.value }))}
                     placeholder="Enter brand name"
                   />
+                </div>
+
+                {/* Quality of Garment (Star Rating out of 5 stars) */}
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
+                      <Star size={14} color="#f59e0b" fill="#f59e0b" /> Quality of Garment
+                    </label>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '1px 6px', borderRadius: 10, border: '1px solid #fde68a' }}>
+                      {QUALITY_LABELS[reQcModal.garmentQuality || 5]}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#fff', padding: '6px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}>
+                    {[1, 2, 3, 4, 5].map((star) => {
+                      const isFilled = (reQcModal.garmentQuality || 5) >= star;
+                      return (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setReQcModal(prev => ({ ...prev, garmentQuality: star }))}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            transition: 'transform 0.15s ease',
+                            transform: isFilled ? 'scale(1.15)' : 'scale(1)'
+                          }}
+                        >
+                          <Star
+                            size={22}
+                            color={isFilled ? '#f59e0b' : '#cbd5e1'}
+                            fill={isFilled ? '#f59e0b' : '#f8fafc'}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Solvent Used (Multiple Choices) */}
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
+                      <Droplets size={14} color="#0284c7" /> Solvent Used
+                    </label>
+                    <span style={{ fontSize: 11, color: '#0369a1' }}>
+                      {(reQcModal.solvents || []).length > 0 ? `${(reQcModal.solvents || []).length} selected` : 'Select multiple'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, background: '#fff', padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1' }}>
+                    {STANDARD_SOLVENTS.map((solv) => {
+                      const isSelected = (reQcModal.solvents || []).includes(solv);
+                      return (
+                        <button
+                          key={solv}
+                          type="button"
+                          onClick={() => {
+                            const current = reQcModal.solvents || [];
+                            const next = isSelected ? current.filter(s => s !== solv) : [...current, solv];
+                            setReQcModal(prev => ({ ...prev, solvents: next }));
+                          }}
+                          style={{
+                            padding: '4px 9px',
+                            borderRadius: 16,
+                            fontSize: 11,
+                            fontWeight: isSelected ? 700 : 500,
+                            cursor: 'pointer',
+                            border: isSelected ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
+                            background: isSelected ? '#e0f2fe' : '#f8fafc',
+                            color: isSelected ? '#0369a1' : '#475569',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}
+                        >
+                          <span>{isSelected ? '✓' : '+'}</span>
+                          <span>{solv}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Comments */}
