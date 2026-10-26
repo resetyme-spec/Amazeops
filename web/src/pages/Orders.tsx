@@ -1223,19 +1223,19 @@ export default function OrdersPage() {
                }}
               >
                {/* Partner Card Top Header */}
-               <div style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, borderBottom: '1px solid #f1f5f9' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexWrap: 'wrap' }}>
+               <div style={{ padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flexWrap: 'wrap' }}>
                  <div>
-                  <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{so.subOrderCode}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                   <span style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{so.partnerName || 'Unassigned'}</span>
-                   <span style={{ fontSize: 11, color: '#64748b', background: '#f1f5f9', padding: '2px 7px', borderRadius: 4, fontFamily: 'monospace', fontWeight: 600 }}>{so.partnerCode}</span>
+                  <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#94a3b8', marginBottom: 1 }}>{so.subOrderCode}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                   <span style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>{so.partnerName || 'Unassigned'}</span>
+                   <span style={{ fontSize: 10, color: '#64748b', background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace', fontWeight: 600 }}>{so.partnerCode}</span>
                    {primaryCat && (
-                    <span style={{ background: bg, color, padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, border: `1px solid ${color}35` }}>
+                    <span style={{ background: bg, color, padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, border: `1px solid ${color}35` }}>
                      {primaryCat}
                     </span>
                    )}
-                   <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>
+                   <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>
                     • {so.garmentIds.length} garment{so.garmentIds.length !== 1 ? 's' : ''}
                    </span>
                   </div>
@@ -1246,23 +1246,23 @@ export default function OrdersPage() {
                   const soCritical = soGarments.filter(g => isGarmentCritical(g)).length;
                   const soReas = soGarments.filter(g => isGarmentReassigned(g)).length;
                   return (
-                   <div style={{ display: 'flex', gap: 6 }}>
-                    {soCritical > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#dc2626', padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}><AlertTriangle size={10} /> {soCritical} Critical</span>}
-                    {soReas > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}><RefreshCw size={10} /> {soReas} Reassigned</span>}
+                   <div style={{ display: 'flex', gap: 5 }}>
+                    {soCritical > 0 && <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', background: '#dc2626', padding: '1px 6px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 2 }}><AlertTriangle size={9} /> {soCritical} Critical</span>}
+                    {soReas > 0 && <span style={{ fontSize: 9, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '1px 6px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 2 }}><RefreshCw size={9} /> {soReas} Reassigned</span>}
                    </div>
                   );
                  })()}
                 </div>
 
                 {/* Right Side Actions & Status */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                  {/* Garment progress */}
-                 <div style={{ textAlign: 'right', minWidth: 95 }}>
-                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginBottom: 3 }}>
-                   <span>{done}/{total} garments</span> • <strong style={{ color: pct === 100 ? '#16a34a' : '#0f172a' }}>{pct}%</strong>
+                 <div style={{ textAlign: 'right', minWidth: 90 }}>
+                  <div style={{ fontSize: 10, color: '#64748b', fontWeight: 500, marginBottom: 2 }}>
+                   <span>{done}/{total}</span> • <strong style={{ color: pct === 100 ? '#16a34a' : '#0f172a' }}>{pct}%</strong>
                   </div>
-                  <div style={{ height: 5, width: 100, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
-                   <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#16a34a' : color, borderRadius: 3, transition: 'width 0.3s' }}></div>
+                  <div style={{ height: 4, width: 90, background: '#f1f5f9', borderRadius: 2, overflow: 'hidden' }}>
+                   <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#16a34a' : color, borderRadius: 2, transition: 'width 0.3s' }}></div>
                   </div>
                  </div>
 
@@ -1270,8 +1270,8 @@ export default function OrdersPage() {
                  {(() => {
                   const b = getBadgeInfo(so.status);
                   return (
-                   <span style={{ fontSize: 11, padding: '4px 10px', background: b.bg, color: b.color, border: `1px solid ${b.border}`, borderRadius: 6, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.color }} />
+                   <span style={{ fontSize: 10, padding: '3px 8px', background: b.bg, color: b.color, border: `1px solid ${b.border}`, borderRadius: 5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: b.color }} />
                     {b.label}
                    </span>
                   );
@@ -1281,17 +1281,17 @@ export default function OrdersPage() {
                  <button
                   onClick={() => setViewModal({ open: true, subOrder: so, garments: soGarments, order: order })}
                   style={{
-                   padding: '5px 12px',
-                   borderRadius: 6,
+                   padding: '4px 10px',
+                   borderRadius: 5,
                    border: '1px solid #cbd5e1',
                    background: '#fff',
-                   fontSize: 12,
+                   fontSize: 11,
                    fontWeight: 600,
                    color: '#4338ca',
                    cursor: 'pointer',
                    display: 'inline-flex',
                    alignItems: 'center',
-                   gap: 4,
+                   gap: 3,
                    boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
                   }}
                  >
@@ -1300,18 +1300,18 @@ export default function OrdersPage() {
                 </div>
                </div>
 
-               {/* Partner In-Card Lifecycle Stepper */}
-               <div style={{ padding: '14px 18px', background: '#fafbfc' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                 <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
-                  Partner Progress Lifecycle
+               {/* Partner In-Card Lifecycle Stepper (Crisp, Compact, Label Only) */}
+               <div style={{ padding: '8px 14px 10px', background: '#fafbfc' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                 <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
+                  Lifecycle
                  </div>
-                 <div style={{ fontSize: 11, color: completedSteps === totalSteps ? '#166534' : '#4338ca', fontWeight: 600 }}>
-                  {completedSteps} of {totalSteps} steps complete ({partnerPct}%)
+                 <div style={{ fontSize: 10, color: completedSteps === totalSteps ? '#166534' : '#4338ca', fontWeight: 600 }}>
+                  {completedSteps} of {totalSteps} complete ({partnerPct}%)
                  </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 6 }}>
                  {partnerSteps.map((st) => {
                   const isDone = st.status === 'COMPLETED';
                   const isInProg = st.status === 'IN_PROGRESS';
@@ -1328,64 +1328,70 @@ export default function OrdersPage() {
                     style={{
                      background: cardBg,
                      border: `1px solid ${cardBorder}`,
-                     borderRadius: 8,
-                     padding: '10px 10px',
+                     borderRadius: 6,
+                     padding: '6px 8px',
                      display: 'flex',
-                     flexDirection: 'column',
-                     justifyContent: 'space-between',
-                     minHeight: 96,
-                     boxShadow: '0 1px 2px rgba(0,0,0,0.01)'
+                     alignItems: 'center',
+                     gap: 6,
+                     minWidth: 0,
                     }}
                    >
-                    <div>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <div
-                       style={{
-                        width: 20,
-                        height: 20,
-                        borderRadius: '50%',
-                        background: isDone ? '#16a34a' : isInProg ? '#2563eb' : isRej ? '#dc2626' : '#cbd5e1',
-                        color: '#fff',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                       }}
-                      >
-                       {isDone ? <Check size={11} strokeWidth={3} /> : isRej ? <XCircle size={11} /> : st.stepNum}
-                      </div>
-                      <span
-                       style={{
-                        fontSize: 9,
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        padding: '1px 5px',
-                        borderRadius: 4,
-                        background: badgeBg,
-                        color: badgeColor,
-                        letterSpacing: '0.02em',
-                       }}
-                      >
-                       {st.badgeText}
-                      </span>
-                     </div>
+                    <div
+                     style={{
+                      width: 17,
+                      height: 17,
+                      borderRadius: '50%',
+                      background: isDone ? '#16a34a' : isInProg ? '#2563eb' : isRej ? '#dc2626' : '#cbd5e1',
+                      color: '#fff',
+                      fontSize: 9,
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                     }}
+                    >
+                     {isDone ? <Check size={10} strokeWidth={3} /> : isRej ? <XCircle size={10} /> : st.stepNum}
+                    </div>
 
-                     <div style={{ fontWeight: 700, fontSize: 11, color: isDone ? '#14532d' : isInProg ? '#1e3a8a' : isRej ? '#7f1d1d' : '#1e293b', marginBottom: 2, lineHeight: 1.25 }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                     <div style={{
+                      fontWeight: 700,
+                      fontSize: 11,
+                      color: isDone ? '#14532d' : isInProg ? '#1e3a8a' : isRej ? '#7f1d1d' : '#334155',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      lineHeight: 1.2
+                     }}>
                       {st.title}
                      </div>
-
-                     <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.25 }}>
-                      {st.description}
-                     </div>
+                     {st.timeframe && isDone ? (
+                      <div style={{ fontSize: 9, color: '#16a34a', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>
+                       {st.timeframe}
+                      </div>
+                     ) : isInProg ? (
+                      <div style={{ fontSize: 9, color: '#2563eb', fontWeight: 600, marginTop: 1 }}>
+                       In Progress
+                      </div>
+                     ) : null}
                     </div>
 
-                    <div style={{ borderTop: `1px solid ${isDone ? '#dcfce7' : isInProg ? '#dbeafe' : isRej ? '#fee2e2' : '#f1f5f9'}`, paddingTop: 4, marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-                     <Clock size={10} color={st.timeframe ? (isDone ? '#16a34a' : '#2563eb') : '#94a3b8'} />
-                     <span style={{ fontSize: 9, fontWeight: st.timeframe ? 600 : 400, color: st.timeframe ? (isDone ? '#15803d' : '#1e40af') : '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                      {st.timeframe || 'Pending'}
-                     </span>
-                    </div>
+                    <span
+                     style={{
+                      fontSize: 8,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      padding: '1px 4px',
+                      borderRadius: 3,
+                      background: badgeBg,
+                      color: badgeColor,
+                      letterSpacing: '0.02em',
+                      flexShrink: 0
+                     }}
+                    >
+                     {st.badgeText}
+                    </span>
                    </div>
                   );
                  })}
