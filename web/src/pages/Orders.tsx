@@ -815,23 +815,24 @@ export default function OrdersPage() {
    </div>
 
    {/* Search & Status Filter Controls */}
-   <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+   <div style={{ display: 'flex', gap: 12, marginBottom: 18, alignItems: 'center' }}>
     <div style={{ position: 'relative', flex: 1 }}>
-     <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }} />
+     <Search size={15} color="#94a3b8" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }} />
      <input
       type="text"
-      placeholder="Search orders by customer name, order ID, or partner..."
+      placeholder="Search by order ID, customer name, partner, or garments..."
       value={search}
       onChange={e => setSearch(e.target.value)}
       style={{
        width: '100%',
-       padding: '10px 14px 10px 40px',
-       border: '1px solid #d1d5db',
+       padding: '9px 36px 9px 38px',
+       border: '1px solid #e2e8f0',
        borderRadius: 8,
        fontSize: 13,
        background: '#fff',
        outline: 'none',
-       boxSizing: 'border-box'
+       boxSizing: 'border-box',
+       boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
       }}
      />
      {search && (
@@ -847,8 +848,18 @@ export default function OrdersPage() {
     <select
      value={statusFilter}
      onChange={e => setStatusFilter(e.target.value)}
-     className="select"
-     style={{ padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, background: '#fff', minWidth: 160 }}
+     style={{
+      padding: '9px 14px',
+      border: '1px solid #e2e8f0',
+      borderRadius: 8,
+      fontSize: 13,
+      background: '#fff',
+      color: '#334155',
+      fontWeight: 500,
+      cursor: 'pointer',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+      minWidth: 150
+     }}
     >
      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s === 'READY_FOR_DELIVERY' ? 'Ready to Deliver' : s === 'QC_APPROVED' ? 'QC Approved' : s === 'QC_PENDING' ? 'QC Pending' : s === 'IN_PROCESS' ? 'In Progress' : s || 'All Statuses'}</option>)}
     </select>
@@ -865,11 +876,11 @@ export default function OrdersPage() {
    ) : (
     <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-      <div style={{ minWidth: 1040 }}>
+      <div style={{ minWidth: 980 }}>
        {/* Table Header */}
        <div style={{
         display: 'grid',
-        gridTemplateColumns: '40px 180px 150px minmax(200px, 1fr) 140px 85px 145px 105px 75px',
+        gridTemplateColumns: '36px minmax(210px, 1.4fr) minmax(180px, 1.2fr) 140px 85px 135px 95px 75px',
         alignItems: 'center',
         padding: '12px 18px',
         background: '#f8fafc',
@@ -881,8 +892,7 @@ export default function OrdersPage() {
         letterSpacing: '0.04em'
        }}>
         <div></div>
-        <div>Order Code</div>
-        <div>Customer</div>
+        <div>Order & Customer</div>
         <div>Partner Assigned</div>
         <div>Care & Tier</div>
         <div>Items</div>
@@ -908,53 +918,74 @@ export default function OrdersPage() {
           <div
            style={{
             display: 'grid',
-            gridTemplateColumns: '40px 180px 150px minmax(200px, 1fr) 140px 85px 145px 105px 75px',
+            gridTemplateColumns: '36px minmax(210px, 1.4fr) minmax(180px, 1.2fr) 140px 85px 135px 95px 75px',
             alignItems: 'center',
-            padding: '14px 18px',
+            padding: '13px 18px',
             cursor: 'pointer',
             background: isOpen ? '#f8fafc' : '#fff',
-            transition: 'background 0.15s ease'
+            borderLeft: isOpen ? '3px solid #6366f1' : '3px solid transparent',
+            transition: 'background 0.15s ease, border-color 0.15s ease'
            }}
            onClick={() => toggleExpand(displayId)}
            onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = '#f8fafc'; }}
            onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = '#fff'; }}
           >
            {/* 1. Chevron toggle */}
-           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, background: isOpen ? '#e0e7ff' : '#f1f5f9', color: isOpen ? '#4338ca' : '#64748b' }}>
-            {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 6, background: isOpen ? '#e0e7ff' : '#f1f5f9', color: isOpen ? '#4338ca' : '#64748b' }}>
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
            </div>
 
-           {/* 2. Order Code */}
-           <div style={{ minWidth: 0, paddingRight: 8 }}>
-            <Link
-             to={`/orders/${displayId}`}
-             onClick={e => e.stopPropagation()}
-             style={{ fontWeight: 700, fontSize: 13, fontFamily: 'monospace', color: '#4f46e5', textDecoration: 'none' }}
-            >
-             {displayId}
-            </Link>
-            {(criticalCount > 0 || reassignedCount > 0) && (
-             <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
-              {criticalCount > 0 && (
-               <span style={{ fontSize: 9, fontWeight: 700, color: '#dc2626', background: '#fee2e2', border: '1px solid #fecaca', padding: '1px 5px', borderRadius: 4 }}>
-                !{criticalCount} Critical
-               </span>
-              )}
-              {reassignedCount > 0 && (
-               <span style={{ fontSize: 9, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #bfdbfe', padding: '1px 5px', borderRadius: 4 }}>
-                ⟳{reassignedCount} Reassigned
-               </span>
-              )}
-             </div>
-            )}
+           {/* 2. Order Code + Customer Subscript */}
+           <div style={{ minWidth: 0, paddingRight: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+             <Link
+              to={`/orders/${displayId}`}
+              onClick={e => e.stopPropagation()}
+              style={{ fontWeight: 700, fontSize: 13, fontFamily: 'monospace', color: '#4338ca', textDecoration: 'none' }}
+              onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
+              onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}
+             >
+              {displayId}
+             </Link>
+             {(criticalCount > 0 || reassignedCount > 0) && (
+              <div style={{ display: 'inline-flex', gap: 4 }}>
+               {criticalCount > 0 && (
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#dc2626', background: '#fee2e2', border: '1px solid #fecaca', padding: '1px 5px', borderRadius: 4 }}>
+                 !{criticalCount} Critical
+                </span>
+               )}
+               {reassignedCount > 0 && (
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #bfdbfe', padding: '1px 5px', borderRadius: 4 }}>
+                 ⟳{reassignedCount} Reassigned
+                </span>
+               )}
+              </div>
+             )}
+            </div>
+
+            {/* Customer Subscript */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+             <span style={{ fontSize: 12, color: '#475569', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {customer.name || '—'}
+             </span>
+             {customer.category && (
+              <span style={{
+               fontSize: 9,
+               fontWeight: 700,
+               padding: '1px 5px',
+               borderRadius: 4,
+               background: customer.category === 'SIGNATURE' ? '#fdf4ff' : customer.category === 'PRIME' ? '#eff6ff' : '#f0fdf4',
+               color: customer.category === 'SIGNATURE' ? '#9333ea' : customer.category === 'PRIME' ? '#2563eb' : '#16a34a',
+               border: `1px solid ${customer.category === 'SIGNATURE' ? '#e9d5ff' : customer.category === 'PRIME' ? '#bfdbfe' : '#bbf7d0'}`,
+               letterSpacing: '0.03em'
+              }}>
+               {customer.category}
+              </span>
+             )}
+            </div>
            </div>
 
-           {/* 3. Customer (Clean: Name only + badge, NO mobile phone, NO location) */}
-           <div style={{ minWidth: 0, paddingRight: 8 }}>
-            {customerLabel(customer.name || '—', customer.category)}
-           </div>
-
-           {/* 4. Partner Assigned */}
+           {/* 3. Partner Assigned */}
            <div style={{ minWidth: 0, paddingRight: 8 }}>
             {subs.length === 0 ? (
              <span style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>Awaiting partner assignment</span>
@@ -980,7 +1011,7 @@ export default function OrdersPage() {
                 >
                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: catColor, flexShrink: 0 }} />
                  <span style={{ fontWeight: 600 }}>{so.partnerName || 'Partner'}</span>
-                 <span style={{ fontSize: 10, color: '#94a3b8' }}>({so.partnerCode})</span>
+                 <span style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>({so.partnerCode})</span>
                 </div>
                );
               })}
@@ -988,7 +1019,7 @@ export default function OrdersPage() {
             )}
            </div>
 
-           {/* 5. Care & Tier */}
+           {/* 4. Care & Tier */}
            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', paddingRight: 8 }}>
             {careBadge(order.careCategory)}
             {cats.map(cat => (
@@ -1009,12 +1040,14 @@ export default function OrdersPage() {
             ))}
            </div>
 
-           {/* 6. Items */}
-           <div style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
-            {garments.length} {garments.length === 1 ? 'item' : 'items'}
+           {/* 5. Items */}
+           <div>
+            <span style={{ fontSize: 11, color: '#475569', fontWeight: 600, background: '#f1f5f9', padding: '3px 8px', borderRadius: 6, display: 'inline-block' }}>
+             {garments.length} {garments.length === 1 ? 'item' : 'items'}
+            </span>
            </div>
 
-           {/* 7. Status */}
+           {/* 6. Status */}
            <div>
             {(() => {
              const badge = getBadgeInfo(deriveStatus(order, subs));
@@ -1029,22 +1062,23 @@ export default function OrdersPage() {
                fontWeight: 700,
                display: 'inline-flex',
                alignItems: 'center',
-               gap: 4,
+               gap: 5,
                letterSpacing: '0.02em',
                whiteSpace: 'nowrap'
               }}>
+               <span style={{ width: 6, height: 6, borderRadius: '50%', background: badge.color }} />
                {badge.label}
               </span>
              );
             })()}
            </div>
 
-           {/* 8. Date */}
+           {/* 7. Date */}
            <div style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>
             {order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
            </div>
 
-           {/* 9. Action */}
+           {/* 8. Action */}
            <div style={{ textAlign: 'right' }}>
             <Link
              to={`/orders/${displayId}`}
