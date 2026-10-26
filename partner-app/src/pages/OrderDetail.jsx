@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery } from '../lib/api';
+import { uploadToS3 } from '../lib/s3';
 
 const TIER_COLORS = { GOLD: '#d97706', YELLOW: '#ea580c', ORANGE: '#ea580c', BLUE: '#3b82f6' };
 
@@ -83,6 +84,7 @@ export default function OrderDetail() {
 
   // Photo Preview Lightbox
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [uploadingSlots, setUploadingSlots] = useState({});
 
   // Expandable sections
   const [showTopDefectDetails, setShowTopDefectDetails] = useState(false);
@@ -117,28 +119,36 @@ export default function OrderDetail() {
 
   useEffect(() => { load(); }, [id]);
 
-  const handlePhotoUpload = (garmentId, slot, file) => {
+  const handlePhotoUpload = async (garmentId, slot, file) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result;
-      if (dataUrl) {
-        setQcForm(prev => {
-          const current = prev[garmentId] || { brand: '', comments: '', photos: {} };
-          return {
-            ...prev,
-            [garmentId]: {
-              ...current,
-              photos: {
-                ...current.photos,
-                [slot]: dataUrl,
-              },
+    const slotKey = `qc_${garmentId}_${slot}`;
+    setUploadingSlots(prev => ({ ...prev, [slotKey]: true }));
+    setError('');
+    try {
+      const s3Url = await uploadToS3(file, 'qc-photos', `${id}_${garmentId}_${slot}`);
+      setQcForm(prev => {
+        const current = prev[garmentId] || { brand: '', comments: '', photos: {} };
+        return {
+          ...prev,
+          [garmentId]: {
+            ...current,
+            photos: {
+              ...current.photos,
+              [slot]: s3Url,
             },
-          };
-        });
-      }
-    };
-    reader.readAsDataURL(file);
+          },
+        };
+      });
+    } catch (err) {
+      console.error('Failed to upload photo to S3:', err);
+      setError(`Failed to upload photo to S3: ${err.message}`);
+    } finally {
+      setUploadingSlots(prev => {
+        const next = { ...prev };
+        delete next[slotKey];
+        return next;
+      });
+    }
   };
 
   const handleAccept = async () => {
@@ -209,22 +219,56 @@ export default function OrderDetail() {
     });
   };
 
-  const handleModalPhotoUpload = (slot, file) => {
+  const handleModalPhotoUpload = async (slot, file) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result;
-      if (dataUrl) {
-        setReQcModal(prev => ({
-          ...prev,
-          photos: {
-            ...prev.photos,
-            [slot]: dataUrl
-          }
-        }));
-      }
-    };
-    reader.readAsDataURL(file);
+    const slotKey = `modal_${slot}`;
+    setUploadingSlots(prev => ({ ...prev, [slotKey]: true }));
+    setError('');
+    try {
+      const garmentId = reQcModal.garment?.garmentId || 'garment';
+      const s3Url = await uploadToS3(file, 'qc-photos', `${id}_reQC_${garmentId}_${slot}`);
+      setReQcModal(prev => ({
+        ...prev,
+        photos: {
+          ...prev.photos,
+          [slot]: s3Url
+        }
+      }));
+    } catch (err) {
+      console.error('Failed to upload Re-QC photo to S3:', err);
+      setError(`Failed to upload photo to S3: ${err.message}`);
+    } finally {
+      setUploadingSlots(prev => {
+        const next = { ...prev };
+        delete next[slotKey];
+        return next;
+      });
+    }
+  };
+
+  const handleCriticalPhotoUpload = async (index, file) => {
+    if (!file) return;
+    const slotKey = `critical_${index}`;
+    setUploadingSlots(prev => ({ ...prev, [slotKey]: true }));
+    setError('');
+    try {
+      const garmentId = criticalModal.garment?.garmentId || 'garment';
+      const s3Url = await uploadToS3(file, 'critical-photos', `${id}_critical_${garmentId}_${index + 1}`);
+      setCriticalPhotos(prev => {
+        const next = [...prev];
+        next[index] = s3Url;
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to upload critical photo to S3:', err);
+      setError(`Failed to upload photo to S3: ${err.message}`);
+    } finally {
+      setUploadingSlots(prev => {
+        const next = { ...prev };
+        delete next[slotKey];
+        return next;
+      });
+    }
   };
 
   const handleSubmitSingleGarmentReQC = async () => {
@@ -827,35 +871,42 @@ export default function OrderDetail() {
                                       photos: { ...form.photos, [slot]: e.target.value }
                                     }
                                   })}
-                                  placeholder="Enter Photo URL"
+                                  placeholder="Enter Photo URL or click Upload"
                                 />
-                                <label
-                                  style={{
-                                    padding: '7px 10px',
-                                    background: '#eff6ff',
-                                    border: '1px solid #bfdbfe',
-                                    borderRadius: 6,
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: '#2563eb',
-                                    cursor: 'pointer',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                >
-                                  <Camera size={13} /> Upload
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    style={{ display: 'none' }}
-                                    onChange={e => {
-                                      const f = e.target.files?.[0];
-                                      if (f) handlePhotoUpload(g.garmentId, slot, f);
-                                    }}
-                                  />
-                                </label>
+                                {(() => {
+                                  const isUp = uploadingSlots[`qc_${g.garmentId}_${slot}`];
+                                  return (
+                                    <label
+                                      style={{
+                                        padding: '7px 10px',
+                                        background: isUp ? '#f1f5f9' : '#eff6ff',
+                                        border: '1px solid #bfdbfe',
+                                        borderRadius: 6,
+                                        fontSize: 11,
+                                        fontWeight: 600,
+                                        color: isUp ? '#94a3b8' : '#2563eb',
+                                        cursor: isUp ? 'wait' : 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                    >
+                                      {isUp ? <RefreshCw size={13} className="spinning" /> : <Camera size={13} />}
+                                      {isUp ? 'Uploading...' : 'Upload'}
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        disabled={isUp}
+                                        style={{ display: 'none' }}
+                                        onChange={e => {
+                                          const f = e.target.files?.[0];
+                                          if (f) handlePhotoUpload(g.garmentId, slot, f);
+                                        }}
+                                      />
+                                    </label>
+                                  );
+                                })()}
                               </div>
 
                               {form.photos?.[slot] && (
@@ -866,7 +917,10 @@ export default function OrderDetail() {
                                     onClick={() => setPhotoPreview({ url: form.photos[slot], title: `${g.category || 'Garment'} — ${label}` })}
                                     style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer' }}
                                   />
-                                  <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Attached (tap to view)</span>
+                                  <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Attached</span>
+                                  {form.photos[slot].includes('amazonaws.com') && (
+                                    <span style={{ fontSize: 10, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>☁️ S3</span>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -930,9 +984,82 @@ export default function OrderDetail() {
               </div>
               <div className="form-group">
                 <label><ImagePlus size={14} /> Photos (max 3) *</label>
-                {criticalPhotos.map((photo, i) => (
-                  <input key={i} className="form-input" style={{ marginBottom: 8 }} value={photo} onChange={e => { const next = [...criticalPhotos]; next[i] = e.target.value; setCriticalPhotos(next); }} placeholder={`Photo ${i + 1} URL`} />
-                ))}
+                {criticalPhotos.map((photo, i) => {
+                  const isUp = uploadingSlots[`critical_${i}`];
+                  return (
+                    <div key={i} style={{ marginBottom: 10 }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <input
+                          className="form-input"
+                          style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
+                          value={photo}
+                          onChange={e => {
+                            const next = [...criticalPhotos];
+                            next[i] = e.target.value;
+                            setCriticalPhotos(next);
+                          }}
+                          placeholder={`Photo ${i + 1} URL or click Upload`}
+                        />
+                        <label
+                          style={{
+                            padding: '7px 10px',
+                            background: isUp ? '#f1f5f9' : '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: isUp ? '#94a3b8' : '#2563eb',
+                            cursor: isUp ? 'wait' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {isUp ? <RefreshCw size={13} className="spinning" /> : <Camera size={13} />}
+                          {isUp ? 'Uploading...' : 'Upload'}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            disabled={isUp}
+                            style={{ display: 'none' }}
+                            onChange={e => {
+                              const f = e.target.files?.[0];
+                              if (f) handleCriticalPhotoUpload(i, f);
+                            }}
+                          />
+                        </label>
+                        {photo && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = [...criticalPhotos];
+                              next[i] = '';
+                              setCriticalPhotos(next);
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 11, cursor: 'pointer', padding: 0 }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      {photo && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                          <img
+                            src={photo}
+                            alt={`Critical photo ${i + 1}`}
+                            onClick={() => setPhotoPreview({ url: photo, title: `Critical Defect Photo ${i + 1}` })}
+                            style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Attached</span>
+                          {photo.includes('amazonaws.com') && (
+                            <span style={{ fontSize: 10, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>☁️ S3</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <button className="btn btn-critical btn-full" onClick={handleMarkCritical} disabled={actionLoading}>
                 <AlertTriangle size={16} /> Mark as Critical
@@ -1159,31 +1286,38 @@ export default function OrderDetail() {
                             }))}
                             placeholder="Enter Photo URL or Upload"
                           />
-                          <label style={{
-                            padding: '6px 12px',
-                            background: '#eff6ff',
-                            border: '1px solid #bfdbfe',
-                            borderRadius: 6,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: '#2563eb',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            whiteSpace: 'nowrap'
-                          }}>
-                            <Camera size={14} /> Upload
-                            <input
-                              type="file"
-                              accept="image/*"
-                              style={{ display: 'none' }}
-                              onChange={e => {
-                                const f = e.target.files?.[0];
-                                if (f) handleModalPhotoUpload(slot, f);
-                              }}
-                            />
-                          </label>
+                          {(() => {
+                            const isUp = uploadingSlots[`modal_${slot}`];
+                            return (
+                              <label style={{
+                                padding: '6px 12px',
+                                background: isUp ? '#f1f5f9' : '#eff6ff',
+                                border: '1px solid #bfdbfe',
+                                borderRadius: 6,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: isUp ? '#94a3b8' : '#2563eb',
+                                cursor: isUp ? 'wait' : 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {isUp ? <RefreshCw size={14} className="spinning" /> : <Camera size={14} />}
+                                {isUp ? 'Uploading...' : 'Upload'}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={isUp}
+                                  style={{ display: 'none' }}
+                                  onChange={e => {
+                                    const f = e.target.files?.[0];
+                                    if (f) handleModalPhotoUpload(slot, f);
+                                  }}
+                                />
+                              </label>
+                            );
+                          })()}
                         </div>
 
                         {reQcModal.photos?.[slot] && (
@@ -1194,7 +1328,10 @@ export default function OrderDetail() {
                               onClick={() => setPhotoPreview({ url: reQcModal.photos[slot], title: label })}
                               style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer' }}
                             />
-                            <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Attached (tap to view)</span>
+                            <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Attached</span>
+                            {reQcModal.photos[slot].includes('amazonaws.com') && (
+                              <span style={{ fontSize: 10, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>☁️ S3</span>
+                            )}
                           </div>
                         )}
                       </div>
