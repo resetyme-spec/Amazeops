@@ -175,6 +175,68 @@ app.get('/api/stats', checkApiKey, (req, res) => {
 
 // Other endpoints
 app.get('/api/garments', checkApiKey, (req, res) => res.json({ garments: [] }));
+// Function to sync services from Customer App (http://localhost:5000) into Cloud Firestore
+async function syncServicesFromCustomerApp() {
+  try {
+    const custUrl = process.env.CUSTOMER_APP_URL || 'http://localhost:5000';
+    const resp = await fetch(`${custUrl}/api/internal/services`);
+    if (!resp.ok) return;
+    const custServices = await resp.json();
+    if (!Array.isArray(custServices) || !custServices.length) return;
+
+    for (const cs of custServices) {
+      if (!cs.name) continue;
+      let docRef = null;
+      let existingData = {};
+
+      if (db) {
+        const snap = await db.collection('services').where('name', '==', cs.name).get();
+        if (!snap.empty) {
+          docRef = snap.docs[0].ref;
+          existingData = snap.docs[0].data();
+        } else if (cs.code) {
+          const snapCode = await db.collection('services').where('code', '==', cs.code).get();
+          if (!snapCode.empty) {
+            docRef = snapCode.docs[0].ref;
+            existingData = snapCode.docs[0].data();
+          }
+        }
+      }
+
+      const svcDocId = docRef ? docRef.id : `SVC-${String(cs.id || Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+      const targetDoc = docRef || (db ? db.collection('services').doc(svcDocId) : null);
+
+      const serviceRecord = {
+        id: targetDoc ? targetDoc.id : svcDocId,
+        name: cs.name,
+        code: cs.code || cs.name.toUpperCase().replace(/\s+/g, '-'),
+        amazeFabServiceId: cs.code || `AMF-${cs.name.slice(0, 4).toUpperCase().replace(/\s+/g, '')}`,
+        description: cs.description || '',
+        goldRate: existingData?.goldRate || 100,
+        yellowRate: existingData?.yellowRate || 80,
+        blueRate: existingData?.blueRate || 60,
+        active: cs.active === 1 || cs.active === true,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (targetDoc) {
+        await targetDoc.set(serviceRecord, { merge: true });
+      }
+
+      // Also update in-memory services list
+      const memIdx = services.findIndex(s => s.name.toLowerCase() === cs.name.toLowerCase());
+      if (memIdx >= 0) {
+        services[memIdx] = { ...services[memIdx], ...serviceRecord };
+      } else {
+        services.push(serviceRecord);
+      }
+    }
+    console.log(`[Dummy App] Synced ${custServices.length} services from Customer App`);
+  } catch (err) {
+    // Customer app offline or starting up
+  }
+}
+
 // Function to seed initial services in Firestore if empty
 async function seedDefaultServices() {
  if (!db) return;
@@ -190,11 +252,16 @@ async function seedDefaultServices() {
  } catch (err) {
   console.warn('[Dummy App] Service seed check warning:', err.message);
  }
+ // Also sync from customer app on startup
+ await syncServicesFromCustomerApp();
 }
-setTimeout(seedDefaultServices, 1000);
+setTimeout(seedDefaultServices, 2000);
+// Periodically sync every 30 seconds
+setInterval(syncServicesFromCustomerApp, 30000);
 
 // Services API Endpoints (Firestore-backed)
 app.get('/api/services', checkApiKey, async (req, res) => {
+ await syncServicesFromCustomerApp();
  if (db) {
   try {
    const snap = await db.collection('services').get();
@@ -205,6 +272,18 @@ app.get('/api/services', checkApiKey, async (req, res) => {
   } catch (err) {}
  }
  res.json({ services });
+});
+
+app.post('/api/services/sync', checkApiKey, async (req, res) => {
+ await syncServicesFromCustomerApp();
+ if (db) {
+  try {
+   const snap = await db.collection('services').get();
+   const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+   return res.json({ success: true, count: list.length, services: list });
+  } catch (err) {}
+ }
+ res.json({ success: true, count: services.length, services });
 });
 
 app.post('/api/services', checkApiKey, async (req, res) => {

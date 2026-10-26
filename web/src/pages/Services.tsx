@@ -1,13 +1,14 @@
 import { db } from '../lib/firebase';
-import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, RefreshCw } from 'lucide-react';
 import { callApi, isApiConfigured } from '../lib/api';
 import type { Service } from '../types';
 
 export default function ServicesPage() {
  const [services, setServices] = useState<Service[]>([]);
  const [loading, setLoading] = useState(true);
+ const [syncing, setSyncing] = useState(false);
  const [showForm, setShowForm] = useState(false);
  const [editingId, setEditingId] = useState<string | null>(null);
  const [saving, setSaving] = useState(false);
@@ -24,29 +25,41 @@ export default function ServicesPage() {
   active: true,
  });
 
- useEffect(() => { loadServices(); }, []);
-
- async function loadServices() {
+ useEffect(() => {
   setLoading(true);
-  try {
-   let list: Service[] = [];
-   try {
-    const snap = await getDocs(collection(db, 'services'));
-    if (!snap.empty) {
-     list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
-    }
-   } catch (e) {}
-
-   if (!list.length) {
-    try {
-     const data = await callApi<any>('/api/services');
-     list = (data.services || []).map((s: any) => ({ id: s.id, ...s } as Service));
-    } catch (e) {}
-   }
-
+  const unsub = onSnapshot(collection(db, 'services'), (snap) => {
+   const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+   list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
    setServices(list);
-  } catch (e) { console.error(e); }
+   setLoading(false);
+  }, async (err) => {
+   console.warn('Firestore onSnapshot warning:', err);
+   await loadServicesFallback();
+  });
+  return () => unsub();
+ }, []);
+
+ async function loadServicesFallback() {
+  try {
+   const snap = await getDocs(collection(db, 'services'));
+   if (!snap.empty) {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    setServices(list);
+   } else {
+    const data = await callApi<any>('/api/services');
+    setServices((data.services || []).map((s: any) => ({ id: s.id, ...s } as Service)));
+   }
+  } catch (e) {}
   setLoading(false);
+ }
+
+ async function handleSync() {
+  setSyncing(true);
+  try {
+   await callApi('/api/services/sync', { method: 'POST' });
+  } catch (e) {}
+  setTimeout(() => setSyncing(false), 800);
  }
 
  function resetForm() {
@@ -95,7 +108,6 @@ export default function ServicesPage() {
 
    setShowForm(false);
    resetForm();
-   loadServices();
   } catch (e: any) { alert('Error saving: ' + (e.message || JSON.stringify(e))); console.error(e); }
   setSaving(false);
  }
@@ -111,22 +123,29 @@ export default function ServicesPage() {
   setServices(prev => prev.filter(s => s.id !== id));
 
   try {
+   await deleteDoc(doc(db, 'services', id));
+  } catch (e) {}
+
+  try {
    await callApi(`/api/services/${id}`, { method: 'DELETE' });
-  } catch (e: any) {
-   alert('Delete failed: ' + (e.message || JSON.stringify(e)));
-   loadServices();
-  }
+  } catch (e: any) {}
  }
-
-
 
  if (loading) return <div className="loading-screen"><div className="loading-spinner" /></div>;
 
  return (
   <div className="page">
   <div className="page-header">
-  <div><h1>Services</h1><p className="page-subtitle">{services.length} services configured</p></div>
-  <button className="btn btn-primary" onClick={openAdd}><Plus size={18} /> Add Service</button>
+   <div>
+    <h1>Services</h1>
+    <p className="page-subtitle">{services.length} services configured (Live synced with Customer App)</p>
+   </div>
+   <div style={{ display: 'flex', gap: 10 }}>
+    <button className="btn btn-secondary" onClick={handleSync} disabled={syncing} title="Sync services from Customer App">
+     <RefreshCw size={16} className={syncing ? 'spin' : ''} /> {syncing ? 'Syncing...' : 'Sync Services'}
+    </button>
+    <button className="btn btn-primary" onClick={openAdd}><Plus size={18} /> Add Service</button>
+   </div>
   </div>
 
   <div className="table-container">
