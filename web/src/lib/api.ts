@@ -22,6 +22,9 @@ function getApiHeader(): string {
 
 export async function callApi<T>(path: string, options?: RequestInit): Promise<T> {
  const base = getApiBase();
+ if (typeof window !== 'undefined' && window.location.protocol === 'https:' && base.startsWith('http://localhost')) {
+  throw new Error('Localhost API skipped on public HTTPS');
+ }
  const url = `${base}${path}`;
  const headerName = getApiHeader();
  const res = await fetch(url, {

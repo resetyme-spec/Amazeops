@@ -526,29 +526,7 @@ export default function OrdersPage() {
     return [...acc, { ...o, id: docId, orderId: docId } as Order];
    }, []);
 
-   // Only sync to Firestore if API returned data (don't overwrite with empty)
-   if (unique.length > 0) {
-    try {
-     const existingSnap = await getDocs(collection(db, 'orders'));
-     const existingMap = new Map<string, any>();
-     existingSnap.docs.forEach(d => { existingMap.set(d.id, d.data()); });
-     const writes = unique.map(o => {
-      const existing = existingMap.get(o.id);
-      if (existing && existing.garments && o.garments) {
-       const mergedGarments = o.garments.map((g: any) => {
-        const match = existing.garments.find((eg: any) => (eg.garmentId === g.garmentId || eg.qrCode === g.qrCode));
-        if (match && match.isCritical) {
-         return { ...g, isCritical: true, criticalComments: match.criticalComments, criticalPhotos: match.criticalPhotos, criticalMarkedAt: match.criticalMarkedAt, criticalMarkedBy: match.criticalMarkedBy };
-        }
-        return g;
-       });
-       return setDoc(doc(db, 'orders', o.id), { ...o, garments: mergedGarments, updatedAt: new Date().toISOString() }, { merge: true });
-      }
-      return setDoc(doc(db, 'orders', o.id), { ...o, updatedAt: new Date().toISOString() }, { merge: true });
-     });
-     await Promise.all(writes);
-    } catch (e) { console.warn('Firestore sync failed:', e); }
-   }
+   // Read-only: orders are already synced to Firestore by backend engine
 
    // Read orders from Firestore (source of truth for critical data)
    let finalUnique: Order[] = [];
@@ -611,10 +589,6 @@ export default function OrdersPage() {
 
  useEffect(() => {
   loadOrders();
-  const unsub = onSnapshot(collection(db, 'orders'), () => {
-   loadOrders();
-  }, (err) => console.warn('Orders onSnapshot error:', err));
-  return () => unsub();
  }, []);
 
  async function handleRefresh() {
