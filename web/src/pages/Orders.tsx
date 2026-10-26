@@ -252,6 +252,25 @@ function deriveStatus(order: Order, subs: SubOrder[]): string {
 }
 
 
+function getOrderTimestamp(o: any): number {
+ if (!o) return 0;
+ const raw = o.createdAt || (o as any).created_at || (o as any).created;
+ if (typeof raw === 'number') return raw;
+ if (typeof raw === 'object' && raw) {
+  if (typeof raw.toMillis === 'function') return raw.toMillis();
+  if (typeof raw.toDate === 'function') return raw.toDate().getTime();
+  if (raw.seconds) return raw.seconds * 1000;
+  if (raw._seconds) return raw._seconds * 1000;
+ }
+ if (raw) {
+  const parsed = new Date(raw).getTime();
+  if (!isNaN(parsed) && parsed > 0) return parsed;
+ }
+ const match = String(o.id || o.orderNumber || o.orderId || '').match(/ORD-(\d{13})/);
+ if (match) return Number(match[1]);
+ return 0;
+}
+
 export default function OrdersPage() {
  const { user } = useAuth();
  const [orders, setOrders] = useState<Order[]>([]);
@@ -564,11 +583,7 @@ export default function OrdersPage() {
      }
     });
 
-    finalUnique = Array.from(orderMap.values()).sort((a, b) => {
-     const tA = new Date(a.createdAt || (a as any).created_at || 0).getTime();
-     const tB = new Date(b.createdAt || (b as any).created_at || 0).getTime();
-     return tB - tA; // Newest first!
-    });
+    finalUnique = Array.from(orderMap.values()).sort((a, b) => getOrderTimestamp(b) - getOrderTimestamp(a));
     setOrders(finalUnique);
    } catch (e) {
     finalUnique = unique;
@@ -683,19 +698,19 @@ export default function OrdersPage() {
  const tierBg: Record<string, string> = { GOLD: '#fef3c7', ORANGE: '#ffedd5', BLUE: '#dbeafe' };
 
  const filtered = orders.filter(o => {
-  const displayId = o.orderNumber || o.orderId || o.id || '';
-  const customer = o.customer || {};
-  const cName = customer.name || '';
-  const cPhone = customer.phone || '';
-  const subs = subOrdersByOrder.get(displayId) || [];
-  const status = deriveStatus(o, subs);
-  const q = search.toLowerCase();
-  const cCity = customer.city || o.city || '';
-  const cPin = customer.pincode || o.pincode || '';
-  const matchSearch = !q || displayId.toLowerCase().includes(q) || cName.toLowerCase().includes(q) || cPhone.includes(q) || cCity.toLowerCase().includes(q) || cPin.includes(q);
-  const matchStatus = !statusFilter || (statusFilter === 'READY_FOR_DELIVERY' ? (status === 'READY_FOR_DELIVERY' || o.deliveryStatus === 'READY_FOR_DELIVERY') : statusFilter === 'QC_APPROVED' ? (status === 'QC_APPROVED' || o.qcStatus === 'QC_APPROVED') : status === statusFilter);
-  return matchSearch && matchStatus;
- });
+   const displayId = o.orderNumber || o.orderId || o.id || '';
+   const customer = o.customer || {};
+   const cName = customer.name || '';
+   const cPhone = customer.phone || '';
+   const subs = subOrdersByOrder.get(displayId) || [];
+   const status = deriveStatus(o, subs);
+   const q = search.toLowerCase();
+   const cCity = customer.city || o.city || '';
+   const cPin = customer.pincode || o.pincode || '';
+   const matchSearch = !q || displayId.toLowerCase().includes(q) || cName.toLowerCase().includes(q) || cPhone.includes(q) || cCity.toLowerCase().includes(q) || cPin.includes(q);
+   const matchStatus = !statusFilter || (statusFilter === 'READY_FOR_DELIVERY' ? (status === 'READY_FOR_DELIVERY' || o.deliveryStatus === 'READY_FOR_DELIVERY') : statusFilter === 'QC_APPROVED' ? (status === 'QC_APPROVED' || o.qcStatus === 'QC_APPROVED') : status === statusFilter);
+   return matchSearch && matchStatus;
+  }).sort((a, b) => getOrderTimestamp(b) - getOrderTimestamp(a));
 
  function careBadge(cat?: string) {
   const c = (cat || 'Normal').toLowerCase();

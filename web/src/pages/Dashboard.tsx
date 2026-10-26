@@ -310,12 +310,26 @@ export default function Dashboard() {
         filteredTotal: filtered.length,
       });
 
-      // Sort recent orders descending by createdAt
-      const sortedRecent = [...enrichedOrders].sort((a, b) => {
-        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return tB - tA;
-      });
+      // Sort recent orders descending by createdAt (newest first)
+      const getOrderTimestamp = (o: any) => {
+        if (!o) return 0;
+        const raw = o.createdAt || o.created_at || o.created;
+        if (typeof raw === 'number') return raw;
+        if (typeof raw === 'object' && raw) {
+          if (typeof raw.toMillis === 'function') return raw.toMillis();
+          if (typeof raw.toDate === 'function') return raw.toDate().getTime();
+          if (raw.seconds) return raw.seconds * 1000;
+          if (raw._seconds) return raw._seconds * 1000;
+        }
+        if (raw) {
+          const parsed = new Date(raw).getTime();
+          if (!isNaN(parsed) && parsed > 0) return parsed;
+        }
+        const match = String(o.id || o.orderNumber || o.orderId || '').match(/ORD-(\d{13})/);
+        if (match) return Number(match[1]);
+        return 0;
+      };
+      const sortedRecent = [...enrichedOrders].sort((a, b) => getOrderTimestamp(b) - getOrderTimestamp(a));
       setRecentOrders(sortedRecent.slice(0, 5));
     } catch (e: any) {
       console.error('Dashboard load failed:', e);
