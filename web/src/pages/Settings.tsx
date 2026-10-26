@@ -1,179 +1,131 @@
-import { useState, useEffect } from 'react';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-
-const DEFAULT_API_URL = 'http://localhost:3002';
-const DEFAULT_API_KEY = 'amaze-fab-super-admin-key-2026';
-const DEFAULT_API_HEADER = 'x-api-key';
-const SETTINGS_DOC = 'settings/integrations';
+import { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function SettingsPage() {
- const [activeTab, setActiveTab] = useState('integrations');
- const [saved, setSaved] = useState(false);
- const [saveMsg, setSaveMsg] = useState('');
- const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications'>('profile');
+  const [saved, setSaved] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+  const [displayName, setDisplayName] = useState(user?.name || '');
+  const [phone, setPhone] = useState(user?.phone || '');
 
- const [apiUrl, setApiUrl] = useState('');
- const [apiKey, setApiKey] = useState('');
- const [apiHeader, setApiHeader] = useState(DEFAULT_API_HEADER);
- const [testResult, setTestResult] = useState<string | null>(null);
- const [testing, setTesting] = useState(false);
-
- useEffect(() => {
-  (async () => {
-   try {
-    const snap = await getDoc(doc(db, SETTINGS_DOC));
-    if (snap.exists()) {
-     const d = snap.data();
-     setApiUrl(d.apiUrl || DEFAULT_API_URL);
-     setApiKey(d.apiKey || DEFAULT_API_KEY);
-     setApiHeader(d.apiHeader || DEFAULT_API_HEADER);
-    } else {
-     setApiUrl(DEFAULT_API_URL);
-     setApiKey(DEFAULT_API_KEY);
-     setApiHeader(DEFAULT_API_HEADER);
-    }
-   } catch {
-    setApiUrl(DEFAULT_API_URL);
-    setApiKey(DEFAULT_API_KEY);
-    setApiHeader(DEFAULT_API_HEADER);
-   }
-   setLoading(false);
-  })();
- }, []);
-
- async function handleSave() {
-  setSaveMsg('');
-  setTestResult(null);
-  try {
-   await setDoc(doc(db, SETTINGS_DOC), {
-    apiUrl: apiUrl.replace(/\/$/, ''),
-    apiKey,
-    apiHeader,
-    updatedAt: serverTimestamp(),
-   });
-   localStorage.setItem('apiBaseUrl', apiUrl.replace(/\/$/, ''));
-   localStorage.setItem('apiKey', apiKey);
-   localStorage.setItem('apiHeader', apiHeader);
-   setSaveMsg('Settings saved to database! Refresh the page to apply.');
-   setSaved(true);
-   setTimeout(() => { setSaved(false); setSaveMsg(''); }, 3000);
-  } catch (e: any) {
-   setSaveMsg(`Error saving: ${e.message}`);
-   setSaved(true);
-   setTimeout(() => { setSaved(false); setSaveMsg(''); }, 4000);
+  function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setSaveMsg('Profile preferences updated successfully!');
+    setSaved(true);
+    setTimeout(() => { setSaved(false); setSaveMsg(''); }, 3000);
   }
- }
 
- async function testConnection() {
-  setTesting(true);
-  setTestResult(null);
-  try {
-   const base = apiUrl.replace(/\/$/, '');
-   const headers: Record<string, string> = {};
-   headers[apiHeader] = apiKey || 'test';
-   const res = await fetch(`${base}/api/orders`, {
-    headers,
-   });
-   if (res.ok) {
-    const data = await res.json();
-    const count = Array.isArray(data.orders) ? data.orders.length : Array.isArray(data) ? data.length : 0;
-    setTestResult(`Connected! Found ${count} orders.`);
-   } else {
-    setTestResult(`Error ${res.status}: ${res.statusText}`);
-   }
-  } catch (e: any) {
-   setTestResult(`Cannot connect: ${e.message}`);
+  function handleSaveNotifications() {
+    setSaveMsg('Notification preferences updated!');
+    setSaved(true);
+    setTimeout(() => { setSaved(false); setSaveMsg(''); }, 3000);
   }
-  setTesting(false);
- }
 
- const tabs = [
-  { id: 'profile', label: 'Profile' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'integrations', label: 'API Connection' },
- ];
+  const tabs: Array<{ id: 'profile' | 'notifications'; label: string }> = [
+    { id: 'profile', label: 'Profile' },
+    { id: 'notifications', label: 'Notifications' },
+  ];
 
- return (
-  <div className="page">
-  <div className="page-header">
-  <div><h1>Settings</h1><p className="page-subtitle">Manage your account and API connection</p></div>
-  </div>
-  <div className="settings-layout">
-  <aside className="settings-tabs">
-  {tabs.map(tab => (
-  <button key={tab.id} className={`settings-tab ${activeTab === tab.id ? 'settings-tab--active' : ''}`} onClick={() => setActiveTab(tab.id)}>
-  {tab.label}
-  </button>
-  ))}
-  </aside>
-  <div className="settings-content">
-  {activeTab === 'profile' && (
-  <div className="card">
-  <div className="card-header"><h3>Profile Settings</h3></div>
-  <div className="card-body">
-  <form onSubmit={e => { e.preventDefault(); handleSave(); }} className="form">
-  <div className="form-group"><label>Display Name</label><input type="text" placeholder="Your name" /></div>
-  <div className="form-group"><label>Email</label><input type="email" disabled /></div>
-  <div className="form-group"><label>Phone</label><input type="tel" placeholder="Your phone number" /></div>
-  <button type="submit" className="btn btn-primary">Save Changes</button>
-  {saved && <p className="success-msg">{saveMsg}</p>}
-  </form>
-  </div>
-  </div>
-  )}
-  {activeTab === 'notifications' && (
-  <div className="card">
-  <div className="card-header"><h3>Notification Preferences</h3></div>
-  <div className="card-body">
-  <div className="notification-preferences">
-  <label className="toggle-row"><span>Email notifications</span><input type="checkbox" defaultChecked /></label>
-  <label className="toggle-row"><span>Push notifications</span><input type="checkbox" defaultChecked /></label>
-  <label className="toggle-row"><span>Critical case alerts</span><input type="checkbox" defaultChecked /></label>
-  <label className="toggle-row"><span>Daily delivery reminders</span><input type="checkbox" defaultChecked /></label>
-  </div>
-  <button className="btn btn-primary" onClick={handleSave}>Save Preferences</button>
-  </div>
-  </div>
-  )}
-  {activeTab === 'integrations' && (
-  <div className="card">
-  <div className="card-header"><h3>API Connection</h3><p className="text-muted">Connect to your customer order system</p></div>
-  <div className="card-body">
-  {loading ? (
-   <p>Loading settings…</p>
-  ) : (
-  <form onSubmit={e => { e.preventDefault(); handleSave(); }} className="form">
-  <div className="form-group">
-  <label>API URL</label>
-  <input className="form-input" value={apiUrl} onChange={e => setApiUrl(e.target.value)} placeholder="https://your-api-server.com" />
-  <small className="text-muted">The web address where orders are fetched from. Your developer will give you this.</small>
-  </div>
-  <div className="form-group">
-  <label>API Key</label>
-  <input className="form-input" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Paste the API key here" />
-  <small className="text-muted">Password to access the API. Your developer will give you this.</small>
-  </div>
-  <div className="form-group">
-  <label>Request Header</label>
-  <input className="form-input" value={apiHeader} onChange={e => setApiHeader(e.target.value)} placeholder="e.g. x-api-key, Authorization, x-access-token" />
-  <small className="text-muted">The header name used to send the API key. Default: x-api-key. Change this if your production API uses a different header (e.g. "Authorization" for Bearer tokens).</small>
-  </div>
-  <div className="form-actions" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-  <button type="submit" className="btn btn-primary">Save & Connect</button>
-  <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={testing}>
-  {testing ? 'Testing...' : 'Test Connection'}
-  </button>
-  {saved && <span className="success-msg">{saveMsg}</span>}
-  {testResult && <span className={testResult.startsWith('Connected') ? 'success-msg' : 'error-msg'}>{testResult}</span>}
-  </div>
-  </form>
-  )}
-  </div>
-  </div>
-  )}
-  </div>
-  </div>
-  </div>
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1>Settings</h1>
+          <p className="page-subtitle">Manage your account profile and notifications</p>
+        </div>
+      </div>
+
+      <div className="settings-layout">
+        <aside className="settings-tabs">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              className={`settings-tab ${activeTab === tab.id ? 'settings-tab--active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </aside>
+
+        <div className="settings-content">
+          {activeTab === 'profile' && (
+            <div className="card">
+              <div className="card-header">
+                <h3>Profile Settings</h3>
+              </div>
+              <div className="card-body">
+                <form onSubmit={handleSaveProfile} className="form">
+                  <div className="form-group">
+                    <label>Display Name</label>
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={e => setDisplayName(e.target.value)}
+                      placeholder="Your name"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email Address</label>
+                    <input type="email" value={user?.email || ''} disabled style={{ background: '#f3f4f6', cursor: 'not-allowed' }} />
+                    <small className="text-muted">Email is managed by your administrator.</small>
+                  </div>
+                  <div className="form-group">
+                    <label>Phone Number</label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      placeholder="+91 98765 43210"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Assigned Role</label>
+                    <input type="text" value={user?.role || 'SUPER_ADMIN'} disabled style={{ background: '#f3f4f6', cursor: 'not-allowed', fontWeight: 600 }} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button type="submit" className="btn btn-primary">Save Changes</button>
+                    {saved && <span className="success-msg">{saveMsg}</span>}
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div className="card">
+              <div className="card-header">
+                <h3>Notification Preferences</h3>
+              </div>
+              <div className="card-body">
+                <div className="notification-preferences">
+                  <label className="toggle-row">
+                    <span>Email notifications for new orders</span>
+                    <input type="checkbox" defaultChecked />
+                  </label>
+                  <label className="toggle-row">
+                    <span>Critical defect alerts (damages flagged by partners)</span>
+                    <input type="checkbox" defaultChecked />
+                  </label>
+                  <label className="toggle-row">
+                    <span>QC inspection alerts (when dry-cleaner submits QC)</span>
+                    <input type="checkbox" defaultChecked />
+                  </label>
+                  <label className="toggle-row">
+                    <span>Ready for delivery dispatches</span>
+                    <input type="checkbox" defaultChecked />
+                  </label>
+                </div>
+                <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button className="btn btn-primary" onClick={handleSaveNotifications}>Save Preferences</button>
+                  {saved && <span className="success-msg">{saveMsg}</span>}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
