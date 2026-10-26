@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { RefreshCw, Settings, ChevronRight, ChevronDown, RotateCcw, Trash2, AlertTriangle, CheckCircle2, Clock, Check, Truck, XCircle, MessageSquare } from 'lucide-react';
 import { fetchOrders } from '../lib/api';
 import { db } from '../lib/firebase';
-import { collection, doc, setDoc, getDocs, getDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, getDoc, deleteDoc, query, where, onSnapshot } from 'firebase/firestore';
 import type { Order, Partner, SubOrder, Garment } from '../types';
 import { assignGarmentsToPartners } from '../lib/assignment';
 import { useAuth } from '../contexts/AuthContext';
@@ -564,7 +564,11 @@ export default function OrdersPage() {
      }
     });
 
-    finalUnique = Array.from(orderMap.values());
+    finalUnique = Array.from(orderMap.values()).sort((a, b) => {
+     const tA = new Date(a.createdAt || (a as any).created_at || 0).getTime();
+     const tB = new Date(b.createdAt || (b as any).created_at || 0).getTime();
+     return tB - tA; // Newest first!
+    });
     setOrders(finalUnique);
    } catch (e) {
     finalUnique = unique;
@@ -592,6 +596,10 @@ export default function OrdersPage() {
 
  useEffect(() => {
   loadOrders();
+  const unsub = onSnapshot(collection(db, 'orders'), () => {
+   loadOrders();
+  }, (err) => console.warn('Orders onSnapshot error:', err));
+  return () => unsub();
  }, []);
 
  async function handleRefresh() {
