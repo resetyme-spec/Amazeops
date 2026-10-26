@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, Settings, ChevronRight, ChevronDown, RotateCcw, Trash2, AlertTriangle, CheckCircle2, Clock, Check, Truck, XCircle, MessageSquare } from 'lucide-react';
+import { RefreshCw, Settings, ChevronRight, ChevronDown, RotateCcw, Trash2, AlertTriangle, CheckCircle2, Clock, Check, Truck, XCircle, MessageSquare, Search } from 'lucide-react';
 import { fetchOrders } from '../lib/api';
 import { db } from '../lib/firebase';
 import { collection, doc, setDoc, getDocs, getDoc, deleteDoc, query, where, onSnapshot } from 'firebase/firestore';
@@ -689,37 +689,78 @@ export default function OrdersPage() {
  function careBadge(cat?: string) {
   const c = (cat || 'Normal').toLowerCase();
   const crown = c === 'premium' ? '👑' : c === 'pristine' ? '🥈' : '🖤';
-  const color = c === 'premium' ? '#d97706' : '#9ca3af';
-  const bg = c === 'premium' ? '#fef3c7' : '#f3f4f6';
-  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, color, padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>{crown} {cat || 'Normal'}</span>;
+  const color = c === 'premium' ? '#d97706' : '#64748b';
+  const bg = c === 'premium' ? '#fef3c7' : '#f1f5f9';
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, color, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>{crown} {cat || 'Normal'}</span>;
  }
 
  function customerLabel(name: string, category?: string) {
   const c = (category || '').toLowerCase();
-  if (c === "l'amaze prime") return <span style={{ color: '#d97706', fontWeight: 600 }}>⭐ {name}</span>;
-  if (c === 'signature') return <span style={{ color: '#d97706', fontWeight: 600 }}>{name}</span>;
-  if (c === 'regular') return <span style={{ color: '#9ca3af' }}>{name}</span>;
-  return <span>{name}</span>;
+  const isPrime = c.includes('prime') || c.includes('privé');
+  const isSignature = c.includes('signature');
+  return (
+   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+    <span style={{ color: '#0f172a', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+     {name || 'Customer'}
+    </span>
+    {isPrime && (
+     <span style={{ fontSize: 9, background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', padding: '1px 5px', borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>
+      PRIME
+     </span>
+    )}
+    {isSignature && (
+     <span style={{ fontSize: 9, background: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', padding: '1px 5px', borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>
+      SIGNATURE
+     </span>
+    )}
+   </div>
+  );
  }
 
+ const statusCounts = React.useMemo(() => {
+  const counts: Record<string, number> = { '': orders.length };
+  orders.forEach(o => {
+   const displayId = o.orderNumber || o.orderId || o.id || '';
+   const subs = subOrdersByOrder.get(displayId) || [];
+   const st = deriveStatus(o, subs);
+   counts[st] = (counts[st] || 0) + 1;
+   if (st === 'READY_FOR_DELIVERY' || o.deliveryStatus === 'READY_FOR_DELIVERY') {
+    counts['READY_FOR_DELIVERY'] = (counts['READY_FOR_DELIVERY'] || 0) + 1;
+   }
+  });
+  return counts;
+ }, [orders, subOrdersByOrder]);
+
  return (
-  <div className="page">
-   <div className="page-header" style={{ marginBottom: 24, gap: 12 }}>
-    <div><h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>Orders</h1><p className="page-subtitle">{filtered.length} orders found</p></div>
+  <div className="page" style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 28px' }}>
+   {/* Header */}
+   <div className="page-header" style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+    <div>
+     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: '#0f172a', margin: 0 }}>Orders</h1>
+      <span style={{ fontSize: 12, fontWeight: 700, color: '#4f46e5', background: '#e0e7ff', padding: '3px 10px', borderRadius: 12 }}>
+       {filtered.length} {filtered.length === 1 ? 'order' : 'orders'}
+      </span>
+     </div>
+     <p className="page-subtitle" style={{ margin: '4px 0 0', color: '#64748b', fontSize: 13 }}>
+      Manage, monitor, and inspect operations across customer orders and partner allocations.
+     </p>
+    </div>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-     <button className="btn btn-primary" onClick={handleRefresh} disabled={refreshing} style={{ padding: '8px 16px' }}>
-      <RefreshCw size={16} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none', marginRight: 6, verticalAlign: 'middle' }} /> Refresh
+     <button className="btn btn-primary" onClick={handleRefresh} disabled={refreshing} style={{ padding: '8px 16px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+      <RefreshCw size={15} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} /> Refresh
      </button>
-     <button className="btn btn-secondary" onClick={handleResetAll} disabled={resetting} style={{ padding: '8px 16px' }} title="Delete all sub-orders and re-create based on current partner categories">
-      <RotateCcw size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> {resetting ? 'Resetting...' : 'Reset & Reassign'}
+     <button className="btn btn-secondary" onClick={handleResetAll} disabled={resetting} style={{ padding: '8px 16px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }} title="Delete all sub-orders and re-create based on current partner categories">
+      <RotateCcw size={15} /> {resetting ? 'Resetting...' : 'Reset & Reassign'}
      </button>
-     <button className="btn btn-outline" onClick={handleCleanupDuplicates} disabled={cleaningUp} style={{ padding: '8px 16px' }} title="Remove duplicate sub-orders from Firestore">
-      <Trash2 size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> {cleaningUp ? 'Cleaning...' : 'Cleanup Duplicates'}
+     <button className="btn btn-outline" onClick={handleCleanupDuplicates} disabled={cleaningUp} style={{ padding: '8px 16px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }} title="Remove duplicate sub-orders from Firestore">
+      <Trash2 size={15} /> {cleaningUp ? 'Cleaning...' : 'Cleanup Duplicates'}
      </button>
     </div>
    </div>
 
-   <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+   {/* Filter Tabs with Live Counts */}
+   <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
     {[
      { label: 'All', value: '' },
      { label: 'Assigned', value: 'ASSIGNED' },
@@ -731,188 +772,302 @@ export default function OrdersPage() {
      { label: 'Rejected', value: 'REJECTED' },
      { label: 'Completed', value: 'COMPLETED' },
      { label: 'Delivered', value: 'DELIVERED' },
-    ].map(chip => (
-     <button key={chip.value} onClick={() => setStatusFilter(chip.value)} style={{
-      padding: '6px 14px', borderRadius: 20, border: '1px solid ' + (statusFilter === chip.value ? '#4f46e5' : '#d1d5db'),
-      background: statusFilter === chip.value ? '#4f46e5' : '#fff',
-      color: statusFilter === chip.value ? '#fff' : '#374151',
-      fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
-     }}>{chip.label}</button>
-    ))}
+    ].map(chip => {
+     const count = statusCounts[chip.value] ?? (chip.value === '' ? orders.length : 0);
+     const isActive = statusFilter === chip.value;
+     return (
+      <button
+       key={chip.value}
+       onClick={() => setStatusFilter(chip.value)}
+       style={{
+        padding: '6px 13px',
+        borderRadius: 20,
+        border: isActive ? '1px solid #4f46e5' : '1px solid #e2e8f0',
+        background: isActive ? '#4f46e5' : '#fff',
+        color: isActive ? '#fff' : '#475569',
+        fontSize: 12,
+        fontWeight: isActive ? 700 : 500,
+        cursor: 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        whiteSpace: 'nowrap',
+        boxShadow: isActive ? '0 2px 4px rgba(79,70,229,0.2)' : '0 1px 2px rgba(0,0,0,0.02)',
+        transition: 'all 0.15s ease',
+       }}
+      >
+       <span>{chip.label}</span>
+       <span
+        style={{
+         fontSize: 10,
+         padding: '1px 6px',
+         borderRadius: 10,
+         background: isActive ? 'rgba(255,255,255,0.25)' : '#f1f5f9',
+         color: isActive ? '#fff' : '#64748b',
+         fontWeight: 700,
+        }}
+       >
+        {count}
+       </span>
+      </button>
+     );
+    })}
    </div>
 
-   <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-    <input type="text" placeholder="Search by customer name, phone, or order ID..." value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, background: '#fff' }} />
-    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="select" style={{ padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, background: '#fff', minWidth: 160 }}>
+   {/* Search & Status Filter Controls */}
+   <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+    <div style={{ position: 'relative', flex: 1 }}>
+     <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }} />
+     <input
+      type="text"
+      placeholder="Search orders by customer name, order ID, or partner..."
+      value={search}
+      onChange={e => setSearch(e.target.value)}
+      style={{
+       width: '100%',
+       padding: '10px 14px 10px 40px',
+       border: '1px solid #d1d5db',
+       borderRadius: 8,
+       fontSize: 13,
+       background: '#fff',
+       outline: 'none',
+       boxSizing: 'border-box'
+      }}
+     />
+     {search && (
+      <button
+       type="button"
+       onClick={() => setSearch('')}
+       style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 16 }}
+      >
+       &times;
+      </button>
+     )}
+    </div>
+    <select
+     value={statusFilter}
+     onChange={e => setStatusFilter(e.target.value)}
+     className="select"
+     style={{ padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, background: '#fff', minWidth: 160 }}
+    >
      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s === 'READY_FOR_DELIVERY' ? 'Ready to Deliver' : s === 'QC_APPROVED' ? 'QC Approved' : s === 'QC_PENDING' ? 'QC Pending' : s === 'IN_PROCESS' ? 'In Progress' : s || 'All Statuses'}</option>)}
     </select>
    </div>
 
-   {loading ? <div className="loading-screen"><div className="loading-spinner" /></div> : (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-     {filtered.map(order => {
-      const displayId = order.orderNumber || order.orderId || order.id || '—';
-      const customer = order.customer || {};
-      const garments: Garment[] = order.garments || [];
-      const cats = garments.map(g => String(g.garmentCategory || g.category || 'GOLD')).filter((v, i, a) => a.indexOf(v) === i);
-      const isOpen = expanded.has(displayId);
-      const subs = subOrdersByOrder.get(displayId) || [];
-      return (
-       <div key={displayId} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', gap: 14, cursor: 'pointer' }} onClick={() => toggleExpand(displayId)}>
-         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, background: '#f3f4f6', color: '#6b7280', flexShrink: 0 }}>
-          {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-         </div>
-         <Link to={`/orders/${displayId}`} className="link" style={{ fontWeight: 600, fontSize: 14, fontFamily: 'monospace', color: '#4f46e5', minWidth: 100 }} onClick={e => e.stopPropagation()}>{displayId}</Link>
-         <div style={{ minWidth: 140, maxWidth: 190, flexShrink: 0 }}>
-          {customerLabel(customer.name || '—', customer.category)}
-          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 1 }}>{customer.phone || '—'}</div>
-          {(customer.city || order.city) && (
-           <div style={{ fontSize: 11, color: '#4f46e5', marginTop: 2, fontWeight: 500 }}>
-            📍 {customer.city || order.city}{customer.pincode || order.pincode ? ' (' + (customer.pincode || order.pincode) + ')' : ''}
+   {/* Clean Aligned Orders Table */}
+   {loading ? (
+    <div className="loading-screen"><div className="loading-spinner" /></div>
+   ) : filtered.length === 0 ? (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '48px 24px', textAlign: 'center', color: '#64748b' }}>
+     <div style={{ fontSize: 15, fontWeight: 600, color: '#1e293b', marginBottom: 4 }}>No orders found</div>
+     <div style={{ fontSize: 13 }}>Try clearing your search query or status filter.</div>
+    </div>
+   ) : (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+     <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ minWidth: 1040 }}>
+       {/* Table Header */}
+       <div style={{
+        display: 'grid',
+        gridTemplateColumns: '40px 180px 150px minmax(200px, 1fr) 140px 85px 145px 105px 75px',
+        alignItems: 'center',
+        padding: '12px 18px',
+        background: '#f8fafc',
+        borderBottom: '1px solid #e2e8f0',
+        fontSize: 11,
+        fontWeight: 700,
+        color: '#64748b',
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em'
+       }}>
+        <div></div>
+        <div>Order Code</div>
+        <div>Customer</div>
+        <div>Partner Assigned</div>
+        <div>Care & Tier</div>
+        <div>Items</div>
+        <div>Status</div>
+        <div>Date</div>
+        <div style={{ textAlign: 'right' }}>Action</div>
+       </div>
+
+       {/* Order Rows */}
+       {filtered.map(order => {
+        const displayId = order.orderNumber || order.orderId || order.id || '—';
+        const customer = order.customer || {};
+        const garments: Garment[] = order.garments || [];
+        const cats = garments.map(g => String(g.garmentCategory || g.category || 'GOLD')).filter((v, i, a) => a.indexOf(v) === i);
+        const isOpen = expanded.has(displayId);
+        const subs = subOrdersByOrder.get(displayId) || [];
+        const criticalCount = countCritical(garments);
+        const reassignedCount = countReassigned(garments);
+
+        return (
+         <div key={displayId} style={{ borderBottom: '1px solid #f1f5f9' }}>
+          {/* Main Row */}
+          <div
+           style={{
+            display: 'grid',
+            gridTemplateColumns: '40px 180px 150px minmax(200px, 1fr) 140px 85px 145px 105px 75px',
+            alignItems: 'center',
+            padding: '14px 18px',
+            cursor: 'pointer',
+            background: isOpen ? '#f8fafc' : '#fff',
+            transition: 'background 0.15s ease'
+           }}
+           onClick={() => toggleExpand(displayId)}
+           onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = '#f8fafc'; }}
+           onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = '#fff'; }}
+          >
+           {/* 1. Chevron toggle */}
+           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, background: isOpen ? '#e0e7ff' : '#f1f5f9', color: isOpen ? '#4338ca' : '#64748b' }}>
+            {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
            </div>
-          )}
-         </div>
 
-         {/* Middle Section: Sub-Orders / Partner Status Breakdown */}
-         <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', padding: '0 8px' }}>
-          {subs.length === 0 ? (
-           <span style={{ fontSize: 11, color: '#9ca3af', fontStyle: 'italic' }}>Awaiting partner assignment</span>
-          ) : (
-           subs.map((so) => {
-            const soGarments = garments.filter(g => so.garmentIds?.includes(g.garmentId));
-            const count = soGarments.length || so.garmentIds?.length || 1;
-            const primaryCat = so.garmentCategory?.split(',')[0] || '';
-            const catColor = tierColor[primaryCat] || '#6b7280';
-            const sBadge = getBadgeInfo(so.status);
-            const isDone = so.status === 'COMPLETED' || so.status === 'DELIVERED' || so.status === 'READY_FOR_DELIVERY' || so.status === 'QC_APPROVED';
-            const done = isDone ? count : so.status === 'IN_PROCESS' || so.status === 'QC_PENDING' || so.status === 'QC_SENT' ? Math.max(1, Math.round(count / 2)) : 0;
-            const pct = Math.round((done / count) * 100);
-            const soCritical = soGarments.filter(g => isGarmentCritical(g)).length;
-            const soReassigned = soGarments.filter(g => isGarmentReassigned(g)).length;
-
-            return (
-             <div
-              key={so.id}
-              style={{
-               display: 'inline-flex',
-               alignItems: 'center',
-               gap: 6,
-               padding: '4px 9px',
-               background: '#fff',
-               border: `1px solid ${sBadge.border || '#e5e7eb'}`,
-               borderRadius: 6,
-               fontSize: 12,
-               boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-               flexShrink: 0,
-              }}
-              title={`${so.partnerName || 'Partner'} (${so.partnerCode}) · ${count} garment${count !== 1 ? 's' : ''} · Status: ${sBadge.label}`}
-             >
-              {primaryCat && (
-               <span
-                style={{
-                 width: 8,
-                 height: 8,
-                 borderRadius: '50%',
-                 background: catColor,
-                 flexShrink: 0,
-                }}
-               />
-              )}
-              <span style={{ fontWeight: 600, color: '#111827', fontSize: 12, whiteSpace: 'nowrap' }}>
-               {so.partnerName || so.partnerCode || 'Partner'}
-              </span>
-              <span style={{ color: '#6b7280', fontSize: 11, whiteSpace: 'nowrap' }}>
-               · {count} {count === 1 ? 'garment' : 'garments'}
-              </span>
-              <span
-               style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '1px 6px',
-                borderRadius: 4,
-                background: sBadge.bg,
-                color: sBadge.color,
-                border: `1px solid ${sBadge.border}`,
-                whiteSpace: 'nowrap',
-                letterSpacing: '0.02em',
-               }}
-              >
-               {sBadge.label}
-              </span>
-              {soCritical > 0 && (
-               <span
-                style={{
-                 fontSize: 10,
-                 fontWeight: 700,
-                 color: '#fff',
-                 background: '#dc2626',
-                 padding: '1px 5px',
-                 borderRadius: 8,
-                }}
-                title={`${soCritical} critical garment${soCritical !== 1 ? 's' : ''}`}
-               >
-                !{soCritical}
+           {/* 2. Order Code */}
+           <div style={{ minWidth: 0, paddingRight: 8 }}>
+            <Link
+             to={`/orders/${displayId}`}
+             onClick={e => e.stopPropagation()}
+             style={{ fontWeight: 700, fontSize: 13, fontFamily: 'monospace', color: '#4f46e5', textDecoration: 'none' }}
+            >
+             {displayId}
+            </Link>
+            {(criticalCount > 0 || reassignedCount > 0) && (
+             <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
+              {criticalCount > 0 && (
+               <span style={{ fontSize: 9, fontWeight: 700, color: '#dc2626', background: '#fee2e2', border: '1px solid #fecaca', padding: '1px 5px', borderRadius: 4 }}>
+                !{criticalCount} Critical
                </span>
               )}
-              {soReassigned > 0 && (
-               <span
-                style={{
-                 fontSize: 10,
-                 fontWeight: 700,
-                 color: '#1e40af',
-                 background: '#dbeafe',
-                 border: '1px solid #93c5fd',
-                 padding: '1px 5px',
-                 borderRadius: 8,
-                }}
-                title={`${soReassigned} reassigned garment${soReassigned !== 1 ? 's' : ''}`}
-               >
-                ⟳{soReassigned}
+              {reassignedCount > 0 && (
+               <span style={{ fontSize: 9, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #bfdbfe', padding: '1px 5px', borderRadius: 4 }}>
+                ⟳{reassignedCount} Reassigned
                </span>
               )}
              </div>
-            );
-           })
-          )}
-         </div>
+            )}
+           </div>
 
-         {careBadge(order.careCategory)}
-         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {cats.map(cat => (
-           <span key={cat} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: '50%', fontSize: 11, fontWeight: 700, background: tierColor[cat] || '#9ca3af', color: '#fff' }} title={cat}>{cat[0]}</span>
-          ))}
-         </div>
-         <span style={{ fontSize: 12, color: '#6b7280', minWidth: 60, textAlign: 'right' }}>{garments.length} item{garments.length !== 1 ? 's' : ''}</span>
-         {(() => {
-          const badge = getBadgeInfo(deriveStatus(order, subs));
-          return (
-           <span className="badge" style={{ fontSize: 12, padding: '4px 10px', background: badge.bg, color: badge.color, border: `1px solid ${badge.border}`, fontWeight: 600 }}>
-            {badge.label}
-           </span>
-          );
-         })()}
-         {(() => {
-          const criticalCount = countCritical(garments);
-          const reassignedCount = countReassigned(garments);
-          return (
-           <>
-            {criticalCount > 0 && (
-             <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', background: '#dc2626', padding: '3px 10px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <AlertTriangle size={12} /> {criticalCount} Critical
-             </span>
+           {/* 3. Customer (Clean: Name only + badge, NO mobile phone, NO location) */}
+           <div style={{ minWidth: 0, paddingRight: 8 }}>
+            {customerLabel(customer.name || '—', customer.category)}
+           </div>
+
+           {/* 4. Partner Assigned */}
+           <div style={{ minWidth: 0, paddingRight: 8 }}>
+            {subs.length === 0 ? (
+             <span style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>Awaiting partner assignment</span>
+            ) : (
+             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {subs.map(so => {
+               const primaryCat = so.garmentCategory?.split(',')[0] || '';
+               const catColor = tierColor[primaryCat] || '#6b7280';
+               return (
+                <div
+                 key={so.id}
+                 style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 8px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  color: '#334155'
+                 }}
+                >
+                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: catColor, flexShrink: 0 }} />
+                 <span style={{ fontWeight: 600 }}>{so.partnerName || 'Partner'}</span>
+                 <span style={{ fontSize: 10, color: '#94a3b8' }}>({so.partnerCode})</span>
+                </div>
+               );
+              })}
+             </div>
             )}
-            {reassignedCount > 0 && (
-             <span style={{ fontSize: 11, fontWeight: 600, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '3px 10px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <RefreshCw size={12} /> {reassignedCount} Reassigned
+           </div>
+
+           {/* 5. Care & Tier */}
+           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', paddingRight: 8 }}>
+            {careBadge(order.careCategory)}
+            {cats.map(cat => (
+             <span
+              key={cat}
+              style={{
+               fontSize: 10,
+               fontWeight: 700,
+               background: tierBg[cat] || '#f1f5f9',
+               color: tierColor[cat] || '#64748b',
+               border: `1px solid ${tierColor[cat] ? tierColor[cat] + '35' : '#e2e8f0'}`,
+               padding: '2px 6px',
+               borderRadius: 4
+              }}
+             >
+              {cat}
              </span>
-            )}
-           </>
-          );
-         })()}
-         <span style={{ fontSize: 12, color: '#9ca3af', minWidth: 80, textAlign: 'right' }}>{order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}</span>
-         <Link to={`/orders/${displayId}`} className="btn btn-sm" style={{ fontSize: 12, padding: '5px 12px' }} onClick={e => e.stopPropagation()}>View</Link>
-        </div>
+            ))}
+           </div>
+
+           {/* 6. Items */}
+           <div style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
+            {garments.length} {garments.length === 1 ? 'item' : 'items'}
+           </div>
+
+           {/* 7. Status */}
+           <div>
+            {(() => {
+             const badge = getBadgeInfo(deriveStatus(order, subs));
+             return (
+              <span style={{
+               fontSize: 11,
+               padding: '3px 9px',
+               background: badge.bg,
+               color: badge.color,
+               border: `1px solid ${badge.border}`,
+               borderRadius: 6,
+               fontWeight: 700,
+               display: 'inline-flex',
+               alignItems: 'center',
+               gap: 4,
+               letterSpacing: '0.02em',
+               whiteSpace: 'nowrap'
+              }}>
+               {badge.label}
+              </span>
+             );
+            })()}
+           </div>
+
+           {/* 8. Date */}
+           <div style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>
+            {order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
+           </div>
+
+           {/* 9. Action */}
+           <div style={{ textAlign: 'right' }}>
+            <Link
+             to={`/orders/${displayId}`}
+             onClick={e => e.stopPropagation()}
+             style={{
+              padding: '5px 12px',
+              borderRadius: 6,
+              border: '1px solid #cbd5e1',
+              background: '#fff',
+              color: '#4f46e5',
+              fontSize: 12,
+              fontWeight: 600,
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 2,
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+             }}
+            >
+             View
+            </Link>
+           </div>
+          </div>
 
         {isOpen && (
          <div style={{ background: '#f9fafb', borderTop: '1px solid #e5e7eb', padding: '18px 20px' }}>
@@ -1124,8 +1279,9 @@ export default function OrdersPage() {
        </div>
       );
      })}
-     {filtered.length === 0 && <div style={{ textAlign: 'center', padding: '48px 24px', color: '#9ca3af', fontSize: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>No orders match your filter.</div>}
+     </div>
     </div>
+   </div>
    )}
    {viewModal.open && viewModal.subOrder && (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => setViewModal({ open: false, subOrder: null, garments: [], order: null })}>

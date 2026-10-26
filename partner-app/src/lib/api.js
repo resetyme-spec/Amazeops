@@ -849,4 +849,29 @@ export async function fetchDashboardData() {
   return data;
  } catch (e) { console.error('fetchDashboardData error:', e); return null; }
 }
- 
+
+// Invoices for partner
+export async function fetchInvoicesByPartner(uid) {
+  try {
+    const partnerId = await getFirestorePartnerId(uid);
+    if (!partnerId) {
+      // Fallback: check all invoices for user email or return all if demo
+      const snap = await getDocs(collection(db, 'invoices'));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+    const q = query(collection(db, 'invoices'), where('partnerId', '==', partnerId));
+    const snap = await getDocs(q);
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    return list;
+  } catch (e) {
+    console.error('fetchInvoicesByPartner error:', e);
+    // Fallback simple fetch
+    try {
+      const snap = await getDocs(collection(db, 'invoices'));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch {
+      return [];
+    }
+  }
+}

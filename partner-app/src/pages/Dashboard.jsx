@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Package, Clock, ShieldCheck, ShieldAlert, Truck, CheckCircle2, LogOut, RefreshCw, Settings } from 'lucide-react';
+import { Package, Clock, ShieldCheck, ShieldAlert, Truck, CheckCircle2, LogOut, RefreshCw, Settings, DollarSign, FileText } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -147,6 +147,37 @@ export default function Dashboard() {
    <StatCard label="QC REJECTED" value={stats.qcRejected} icon={ShieldAlert} gradient="linear-gradient(135deg,#ef4444,#dc2626)" link="/orders" count="REJECTED" />
    <StatCard label="QC APPROVED" value={stats.qcApproved} icon={CheckCircle2} gradient="linear-gradient(135deg,#22c55e,#16a34a)" link="/orders" count="QC APPROVED" />
    <StatCard label="DELIVERY" value={stats.deliveryPending} icon={Truck} gradient="linear-gradient(135deg,#a855f7,#7c3aed)" link="/orders" count="PENDING" />
+  </div>
+
+  <div style={{ padding: '0 16px 20px' }}>
+   <Link
+    to="/invoices"
+    style={{
+     display: 'flex',
+     alignItems: 'center',
+     justifyContent: 'space-between',
+     background: '#fff',
+     padding: '16px 18px',
+     borderRadius: 14,
+     border: '1.5px solid #e0e7ff',
+     boxShadow: '0 4px 12px rgba(99, 102, 241, 0.08)',
+     textDecoration: 'none',
+     color: '#0f172a',
+    }}
+   >
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+     <div style={{ width: 44, height: 44, borderRadius: 12, background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+      <FileText size={22} />
+     </div>
+     <div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>Invoices & Earnings</div>
+      <div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>View rate card settlements, GST & payouts</div>
+     </div>
+    </div>
+    <div style={{ fontSize: 13, fontWeight: 700, color: '#4f46e5', display: 'flex', alignItems: 'center', gap: 4 }}>
+     View →
+    </div>
+   </Link>
   </div>
   </div>
  );

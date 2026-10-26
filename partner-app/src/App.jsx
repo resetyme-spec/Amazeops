@@ -6,6 +6,7 @@ const Login = lazy(() => import('./pages/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Orders = lazy(() => import('./pages/Orders'));
 const OrderDetail = lazy(() => import('./pages/OrderDetail'));
+const Invoices = lazy(() => import('./pages/Invoices'));
 const ChangePassword = lazy(() => import('./pages/ChangePassword'));
 
 function ProtectedRoute(props) {
@@ -32,6 +33,7 @@ function AppRoutes() {
  <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
  <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
  <Route path="/orders/:id" element={<ProtectedRoute><OrderDetail /></ProtectedRoute>} />
+ <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
  </Routes>
  );
 }
