@@ -1108,15 +1108,26 @@ export default function OrderDetail() {
                         </button>
                       )}
                       <button onClick={() => setViewModal({ open: true, subOrder: so, garments: soGarments })} style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', fontSize: 12, color: '#4b5563', cursor: 'pointer' }}>View</button>
-                      <select
-                        value={so.status}
-                        onChange={e => handleChangeStatus(so.id, e.target.value)}
-                        style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, background: '#fff', cursor: 'pointer' }}
-                      >
-                        {['PENDING','ASSIGNED','IN_PROCESS','QC_SENT','QC_PENDING','QC_APPROVED','READY_FOR_DELIVERY','QC_REJECTED','COMPLETED','DELIVERED','CANCELLED','REJECTED'].map(s => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
+                      {(() => {
+                        const b = getBadgeInfo(so.status);
+                        return (
+                          <span style={{
+                            fontSize: 11,
+                            padding: '4px 10px',
+                            background: b.bg,
+                            color: b.color,
+                            border: `1px solid ${b.border}`,
+                            borderRadius: 6,
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5
+                          }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.color }} />
+                            {b.label}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1154,10 +1165,10 @@ export default function OrderDetail() {
                 const tier = g.garmentCategory || 'GOLD';
                 const color = tierColor[tier] || '#6b7280';
 
-                // Look up QC update for this garment
+                // Look up QC update for this garment (from qcRecords or garment updates)
                 const gUpdate = qcRecords.flatMap(r => r.garmentUpdates || []).find(u => u.garmentId === g.garmentId)
                   || ((order as any).garmentUpdates || []).find((u: any) => u.garmentId === g.garmentId)
-                  || ((g.brand || (g as any).comments || (g as any).photos || (g as any).garmentQuality || (g as any).solvents) ? g : null);
+                  || (((g as any).comments || (g as any).photos || (g as any).qcPhotos || (g as any).garmentQuality || (g as any).solvents) ? g : null);
 
                 // Look up matching QC record
                 const orderIdStr = (order.id || order.orderId || orderId) as string;
@@ -1172,19 +1183,26 @@ export default function OrderDetail() {
                   qcRecords.map(r => r.rejectedGarments?.[g.garmentId]).find(Boolean);
 
                 const soForGarment = subOrders.find(so => so.garmentIds?.includes(g.garmentId));
-                const subIsSentToQC = soForGarment ? (soForGarment.status === 'QC_SENT' || soForGarment.status === 'QC_PENDING' || soForGarment.status === 'QC_REJECTED' || soForGarment.status === 'QC_APPROVED' || soForGarment.status === 'READY_FOR_DELIVERY' || soForGarment.status === 'COMPLETED' || soForGarment.status === 'DELIVERED') : false;
-
                 const isRejected = g.qcStatus === 'QC_REJECTED' || !!gRej;
                 const isPassed = !isRejected && (g.qcStatus === 'QC_PASSED' || matchedRec?.status === 'QC_APPROVED');
-                const isPending = !isRejected && !isPassed && (
-                  gUpdate != null ||
-                  matchedRec?.status === 'QC_PENDING' ||
-                  subOrders.some(so => so.garmentIds?.includes(g.garmentId) && (so.status === 'QC_SENT' || so.status === 'QC_PENDING'))
-                );
-                const isSentToQC = !!gUpdate || subIsSentToQC || isRejected || isPassed || isPending || ['QC_PENDING', 'QC_SENT', 'QC_APPROVED', 'QC_REJECTED', 'READY_FOR_DELIVERY', 'COMPLETED', 'DELIVERED'].includes(order.status);
 
-                const partnerPhotos = gUpdate?.photos || {};
+                const partnerPhotos = (gUpdate?.photos || (g as any).photos || (g as any).qcPhotos || {}) as any;
                 const hasPartnerPhotos = !!(partnerPhotos.front || partnerPhotos.back || partnerPhotos.other);
+                const hasPartnerQCDetails = hasPartnerPhotos || !!gUpdate?.comments || !!(gUpdate as any)?.garmentQuality || (Array.isArray((gUpdate as any)?.solvents) && (gUpdate as any).solvents.length > 0);
+
+                const isPending: boolean = !isRejected && !isPassed && Boolean(
+                  hasPartnerQCDetails ||
+                  matchedRec?.status === 'QC_PENDING' ||
+                  (soForGarment && (soForGarment.status === 'QC_SENT' || soForGarment.status === 'QC_PENDING'))
+                );
+
+                const hasSubmittedQC = Boolean(
+                  isRejected ||
+                  isPassed ||
+                  isPending ||
+                  hasPartnerQCDetails ||
+                  (soForGarment && ['QC_SENT', 'QC_PENDING', 'QC_APPROVED', 'QC_REJECTED'].includes(soForGarment.status))
+                );
 
                 return (
                   <tr
@@ -1443,27 +1461,33 @@ export default function OrderDetail() {
                             <MessageSquare size={13} /> {isGarmentReassigned(g) ? 'Edit / Reassign' : 'Instruct & Reassign'}
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => openViewQcModal(g, gUpdate, gRej, isRejected, isPassed, isPending)}
-                          style={{
-                            padding: '6px 14px',
-                            borderRadius: 6,
-                            border: isRejected ? '1px solid #fca5a5' : isPassed ? '1px solid #86efac' : '1px solid #3b82f6',
-                            background: isRejected ? '#fef2f2' : isPassed ? '#f0fdf4' : '#eff6ff',
-                            color: isRejected ? '#dc2626' : isPassed ? '#15803d' : '#1d4ed8',
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          <Eye size={14} /> View QC
-                        </button>
+                        {hasSubmittedQC ? (
+                          <button
+                            type="button"
+                            onClick={() => openViewQcModal(g, gUpdate, gRej, isRejected, isPassed, isPending)}
+                            style={{
+                              padding: '6px 14px',
+                              borderRadius: 6,
+                              border: isRejected ? '1px solid #fca5a5' : isPassed ? '1px solid #86efac' : '1px solid #3b82f6',
+                              background: isRejected ? '#fef2f2' : isPassed ? '#f0fdf4' : '#eff6ff',
+                              color: isRejected ? '#dc2626' : isPassed ? '#15803d' : '#1d4ed8',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <Eye size={14} /> View QC
+                          </button>
+                        ) : !(isGarmentCritical(g) || isGarmentReassigned(g)) ? (
+                          <span style={{ fontSize: 11, color: '#9ca3af', fontStyle: 'italic', paddingRight: 4 }}>
+                            Awaiting QC
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
