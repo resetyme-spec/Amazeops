@@ -585,7 +585,7 @@ export default function Orders() {
       marginLeft: 'auto',
      }}
     >
-     Send to QC →
+     {order.status === 'IN_PROCESS' ? 'Send to QC →' : 'Details →'}
     </Link>
    </div>
   </div>
