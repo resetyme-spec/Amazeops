@@ -411,19 +411,59 @@ export default function OrderDetail() {
 
   const loadQCRecords = async (orderIdStr: string, subs: SubOrder[]) => {
     try {
-      const qcSnap = await getDocs(collection(db, 'qcRecords'));
-      const allRecords: Array<QCRecord & { id: string }> = qcSnap.docs.map(d => ({
-        id: d.id,
-        ...(d.data() as any),
-      }));
+      const matchedRecords: Array<QCRecord & { id: string }> = [];
+      const seenIds = new Set<string>();
 
-      const matched = allRecords.filter(rec => {
-        if (rec.orderId === orderIdStr) return true;
-        if (subs.some(so => so.id === rec.orderId || so.id === rec.subOrderId)) return true;
-        if (rec.subOrderId && subs.some(so => so.id === rec.subOrderId)) return true;
-        return false;
-      });
-      setQcRecords(matched);
+      // 1. Direct query by orderId
+      try {
+        const qByOrder = query(collection(db, 'qcRecords'), where('orderId', '==', orderIdStr));
+        const snap = await getDocs(qByOrder);
+        snap.docs.forEach(d => {
+          if (!seenIds.has(d.id)) {
+            seenIds.add(d.id);
+            matchedRecords.push({ id: d.id, ...(d.data() as any) });
+          }
+        });
+      } catch (e) {
+        console.warn('[OrderDetail] Error querying qcRecords by orderId:', e);
+      }
+
+      // 2. Query by subOrderIds
+      const subIds = (subs || []).map(s => s.id).filter(Boolean);
+      for (const sId of subIds) {
+        try {
+          const qBySub = query(collection(db, 'qcRecords'), where('subOrderId', '==', sId));
+          const snapSub = await getDocs(qBySub);
+          snapSub.docs.forEach(d => {
+            if (!seenIds.has(d.id)) {
+              seenIds.add(d.id);
+              matchedRecords.push({ id: d.id, ...(d.data() as any) });
+            }
+          });
+        } catch (e) {}
+      }
+
+      // 3. Fallback: collection scan if targeted query was empty
+      if (matchedRecords.length === 0) {
+        try {
+          const qcSnap = await getDocs(collection(db, 'qcRecords'));
+          qcSnap.docs.forEach(d => {
+            const data = d.data() as any;
+            if (
+              data.orderId === orderIdStr ||
+              subs.some(so => so.id === data.orderId || so.id === data.subOrderId) ||
+              (data.subOrderId && subs.some(so => so.id === data.subOrderId))
+            ) {
+              if (!seenIds.has(d.id)) {
+                seenIds.add(d.id);
+                matchedRecords.push({ id: d.id, ...data });
+              }
+            }
+          });
+        } catch (e) {}
+      }
+
+      setQcRecords(matchedRecords);
     } catch (err) {
       console.warn('[OrderDetail] Error loading QC records:', err);
     }
@@ -1486,7 +1526,8 @@ export default function OrderDetail() {
                 // Look up QC update for this garment (from qcRecords or garment updates)
                 const gUpdate = qcRecords.flatMap(r => r.garmentUpdates || []).find(u => u.garmentId === g.garmentId)
                   || ((order as any).garmentUpdates || []).find((u: any) => u.garmentId === g.garmentId)
-                  || (((g as any).comments || (g as any).photos || (g as any).qcPhotos || (g as any).garmentQuality || (g as any).solvents) ? g : null);
+                  || ((order as any).qcGarments || []).find((u: any) => u.garmentId === g.garmentId)
+                  || (((g as any).comments || (g as any).photos || (g as any).qcPhotos || (g as any).garmentQuality || (g as any).solvents || g.brand) ? g : null);
 
                 // Look up matching QC record
                 const orderIdStr = (order.id || order.orderId || orderId) as string;
@@ -1824,8 +1865,12 @@ export default function OrderDetail() {
       {/* Garment QC Details & Inspection Dialog Box */}
       {viewQcModal.open && viewQcModal.garment && (() => {
         const g = viewQcModal.garment;
-        const gUpdate = viewQcModal.gUpdate;
-        const photos = gUpdate?.photos || (g as any).photos || {};
+        const gUpdate = viewQcModal.gUpdate
+          || qcRecords.flatMap(r => r.garmentUpdates || []).find(u => u.garmentId === g.garmentId)
+          || ((order as any).garmentUpdates || []).find((u: any) => u.garmentId === g.garmentId)
+          || ((order as any).qcGarments || []).find((u: any) => u.garmentId === g.garmentId)
+          || (((g as any).comments || (g as any).photos || (g as any).qcPhotos || (g as any).garmentQuality || (g as any).solvents || g.brand) ? g : null);
+        const photos = (gUpdate?.photos || (g as any).photos || (g as any).qcPhotos || {}) as any;
         const brand = gUpdate?.brand || g.brand || '';
         const comments = gUpdate?.comments || (g as any).comments || '';
         const quality = Number((gUpdate as any)?.garmentQuality || (g as any).garmentQuality || 5);

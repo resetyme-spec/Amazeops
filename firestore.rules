@@ -45,7 +45,7 @@ service cloud.firestore {
  match /orders/{orderId} {
   allow read: if isSignedIn() && isActive();
   allow create: if isAdmin() || isStaff();
-  allow update: if isAdmin() || isStaff() || (isSignedIn() && isActive() && request.resource.data.keys().hasAny(['qcStatus', 'qcSubmittedAt', 'qcSubmittedBy', 'qcGarments', 'qcRejection', 'qcApprovedBy', 'deliveryStatus', 'deliveryInitiatedAt']));
+  allow update: if isSignedIn() && isActive();
 
  // Garments subcollection
  match /garments/{garmentId} {

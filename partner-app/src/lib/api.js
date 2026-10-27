@@ -605,6 +605,8 @@ export async function submitQC(orderId, garmentUpdates, actor, isReQC = false) {
     });
     await updateDoc(parentRef, {
      garments: pGarments,
+     qcGarments: garmentUpdates,
+     qcStatus: 'QC_PENDING',
      status: 'QC_PENDING',
      rejectionReason: '',
      rejectionComments: '',

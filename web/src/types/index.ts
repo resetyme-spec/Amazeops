@@ -468,3 +468,17 @@ export interface StaffDashboardStats {
  qcRejectedToday: number;
  allOrders: number;
 }
+
+export interface StainType {
+ id: string;
+ code: string;
+ name: string;
+ examples: string;
+ category?: string;
+ treatmentNotes?: string;
+ difficulty?: 'EASY' | 'MODERATE' | 'COMPLEX' | 'SPECIALIZED';
+ active: boolean;
+ isCustom?: boolean;
+ createdAt?: string;
+ updatedAt?: string;
+}
