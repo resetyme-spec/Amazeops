@@ -585,7 +585,7 @@ export default function Orders() {
       marginLeft: 'auto',
      }}
     >
-     Details →
+     Send to QC →
     </Link>
    </div>
   </div>
