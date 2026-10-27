@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Amaze Partner</string>
+    <string name="title_activity_main">Amaze Partner</string>
+    <string name="package_name">com.amazeops.partner</string>
+    <string name="custom_url_scheme">com.amazeops.partner</string>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "appId": "com.amazeops.partner",
+  "appName": "Amaze Partner",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
