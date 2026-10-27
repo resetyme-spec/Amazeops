@@ -2,7 +2,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Settings, RefreshCw, AlertTriangle, CheckCircle2,
   XCircle, Image as ImageIcon, Camera, Upload, X, MessageSquare, Eye, Tag, Truck,
-  Star, Droplets
+  Star, Droplets, Check, Clock
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { fetchOrderById } from '../lib/api';
@@ -60,6 +60,104 @@ function getBadgeInfo(status: string) {
   if (s === 'COMPLETED' || s === 'DELIVERED') return { label: s, bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
   if (s === 'REJECTED' || s === 'CANCELLED') return { label: s, bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
   return { label: s || 'RECEIVED', bg: '#f3f4f6', color: '#374151', border: '#e5e7eb' };
+}
+
+interface TimelineStep {
+  id: string;
+  stepNum: number;
+  title: string;
+  description: string;
+  timeframe?: string;
+  status: 'COMPLETED' | 'IN_PROGRESS' | 'REJECTED' | 'PENDING';
+  badgeText?: string;
+}
+
+function formatTimeFrame(ts?: string | Date | null): string {
+  if (!ts) return '';
+  try {
+    const d = typeof ts === 'string' ? new Date(ts) : ts;
+    if (isNaN(d.getTime())) return '';
+    const day = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+    return `${day}, ${time}`;
+  } catch {
+    return '';
+  }
+}
+
+function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): TimelineStep[] {
+  const soStatus = (so.status || '').toUpperCase();
+  const isDelivered = soStatus === 'DELIVERED' || soStatus === 'COMPLETED';
+  const isReady = isDelivered || soStatus === 'READY_FOR_DELIVERY' || (so as any).deliveryStatus === 'READY_FOR_DELIVERY';
+  const isQcApproved = isReady || soStatus === 'QC_APPROVED' || (so as any).qcStatus === 'QC_APPROVED' || qcRecord?.status === 'QC_APPROVED';
+  const isQcRejected = soStatus === 'QC_REJECTED' || (so as any).qcStatus === 'QC_REJECTED' || qcRecord?.status === 'QC_REJECTED';
+  const isQcSubmitted = isQcApproved || isQcRejected || soStatus === 'QC_PENDING' || soStatus === 'QC_SENT' || !!(so as any)?.qcSubmittedAt || (qcRecord && (qcRecord.subOrderId === so.id || qcRecord.orderId === so.id));
+  const isInProcess = isQcSubmitted || soStatus === 'IN_PROCESS' || !!(so as any)?.acceptedAt;
+
+  const fmt = (ts?: string | Date | null) => formatTimeFrame(ts);
+  const assignedTime = so.createdAt || order.createdAt;
+  const acceptedTime = (so as any)?.acceptedAt || (isInProcess ? so.updatedAt : null);
+  const qcSubmittedTime = qcRecord?.submittedAt || (so as any)?.qcSubmittedAt || (isQcSubmitted ? so.updatedAt : null);
+  const qcApprovedTime = qcRecord?.approvedAt || (isQcApproved ? so.updatedAt : (isQcRejected ? qcRecord?.rejectedAt || so.updatedAt : null));
+  const readyTime = (so as any)?.deliveryInitiatedAt || (isReady ? so.updatedAt : null);
+  const deliveredTime = (so as any)?.deliveredAt || (isDelivered ? so.updatedAt : null);
+
+  return [
+    {
+      id: 'assigned',
+      stepNum: 1,
+      title: 'Assigned',
+      description: `${so.partnerName || 'Partner'} (${so.partnerCode})`,
+      timeframe: fmt(assignedTime),
+      status: 'COMPLETED',
+      badgeText: 'Done',
+    },
+    {
+      id: 'in_process',
+      stepNum: 2,
+      title: 'Accepted & Processing',
+      description: isInProcess ? 'Garments in processing' : 'Partner to accept order',
+      timeframe: isInProcess ? fmt(acceptedTime) : undefined,
+      status: (isQcSubmitted || isQcApproved || isReady || isDelivered) ? 'COMPLETED' : isInProcess ? 'IN_PROGRESS' : 'PENDING',
+      badgeText: (isQcSubmitted || isQcApproved || isReady || isDelivered) ? 'Done' : isInProcess ? 'In Progress' : 'Pending',
+    },
+    {
+      id: 'qc_submitted',
+      stepNum: 3,
+      title: 'QC Submitted',
+      description: isQcSubmitted ? 'Inspection submitted' : 'Pending inspection',
+      timeframe: isQcSubmitted ? fmt(qcSubmittedTime) : undefined,
+      status: (isQcApproved || isReady || isDelivered) ? 'COMPLETED' : isQcSubmitted ? 'IN_PROGRESS' : 'PENDING',
+      badgeText: (isQcApproved || isReady || isDelivered) ? 'Done' : isQcSubmitted ? 'Under Review' : 'Pending',
+    },
+    {
+      id: 'qc_verified',
+      stepNum: 4,
+      title: isQcRejected ? 'QC Rejected' : isQcApproved ? 'QC Approved' : 'QC Verified',
+      description: isQcRejected ? 'Defects found' : isQcApproved ? 'Approved' : 'Admin verification',
+      timeframe: (isQcApproved || isQcRejected) ? fmt(qcApprovedTime) : undefined,
+      status: isQcRejected ? 'REJECTED' : isQcApproved ? 'COMPLETED' : isQcSubmitted ? 'IN_PROGRESS' : 'PENDING',
+      badgeText: isQcRejected ? 'Rejected' : isQcApproved ? 'Approved' : isQcSubmitted ? 'Reviewing' : 'Pending',
+    },
+    {
+      id: 'ready_delivery',
+      stepNum: 5,
+      title: 'Ready to Deliver',
+      description: isReady ? 'Packed & ready' : 'Pending QC',
+      timeframe: isReady ? fmt(readyTime) : undefined,
+      status: isDelivered ? 'COMPLETED' : isReady ? 'IN_PROGRESS' : 'PENDING',
+      badgeText: isDelivered ? 'Done' : isReady ? 'Ready' : 'Pending',
+    },
+    {
+      id: 'delivered',
+      stepNum: 6,
+      title: 'Delivered',
+      description: isDelivered ? 'Delivered' : 'Pending',
+      timeframe: isDelivered ? fmt(deliveredTime) : undefined,
+      status: isDelivered ? 'COMPLETED' : 'PENDING',
+      badgeText: isDelivered ? 'Delivered' : 'Pending',
+    },
+  ];
 }
 
 export function isGarmentReassigned(g: any): boolean {
@@ -899,20 +997,90 @@ export default function OrderDetail() {
 
   return (
     <div className="page">
-      <div className="page-header" style={{ marginBottom: 32 }}>
-        <Link to="/orders" className="btn btn-secondary" style={{ padding: '8px 12px' }}><ArrowLeft size={18} /></Link>
-        <div style={{ flex: 1, marginLeft: 16 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 6 }}>Order {displayId}</h1>
-          <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-            {customerLabel(customer.name || 'Unknown', customer.category)}
-            <span style={{ color: '#9ca3af', fontSize: 13 }}>{customer.phone || '—'}</span>
-            {(customer.city || order.city) && (
-              <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
-                📍 {customer.city || order.city}{customer.pincode || order.pincode ? ` (${customer.pincode || order.pincode})` : ''}
+      {/* Top Header Card */}
+      <div style={{
+        background: '#fff',
+        border: '1px solid #e2e8f0',
+        borderRadius: 12,
+        padding: '20px 24px',
+        marginBottom: 24,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+      }}>
+        {/* Navigation Breadcrumb & Refresh */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#64748b' }}>
+            <Link
+              to="/orders"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                color: '#4f46e5',
+                textDecoration: 'none',
+                fontWeight: 600,
+                fontSize: 13
+              }}
+            >
+              <ArrowLeft size={15} /> Back to Orders
+            </Link>
+            <span style={{ color: '#cbd5e1' }}>/</span>
+            <span style={{ fontFamily: 'monospace', color: '#0f172a', fontWeight: 600 }}>{displayId}</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ color: '#64748b', fontSize: 12 }}>
+              {order.createdAt ? new Date(order.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+            </span>
+            <button
+              onClick={handleRefresh}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                borderRadius: 7,
+                border: '1px solid #e2e8f0',
+                background: '#fff',
+                color: '#334155',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+              }}
+            >
+              <RefreshCw size={13} /> Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Order Info & Status Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', color: '#0f172a', margin: 0, lineHeight: 1.2 }}>
+              Order {displayId}
+            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#475569', fontWeight: 500 }}>
+                Customer: <strong style={{ color: '#0f172a' }}>{customer.name || 'Unknown'}</strong>
               </span>
-            )}
-            <span style={{ background: '#f3f4f6', color: '#9ca3af', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>{customer.category || '—'}</span>
-            {careBadge(order.careCategory)}
+              {customer.category && (
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: '2px 8px',
+                  borderRadius: 5,
+                  background: (customer.category || '').toLowerCase().includes('prime') ? '#fef3c7' : '#f1f5f9',
+                  color: (customer.category || '').toLowerCase().includes('prime') ? '#b45309' : '#475569',
+                  border: `1px solid ${(customer.category || '').toLowerCase().includes('prime') ? '#fde68a' : '#e2e8f0'}`
+                }}>
+                  {customer.category}
+                </span>
+              )}
+              {careBadge(order.careCategory)}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {(() => {
               const currentStatus = order.status || (subOrders.some(s => s.status === 'READY_FOR_DELIVERY') ? 'READY_FOR_DELIVERY' : 'RECEIVED');
               const b = getBadgeInfo(currentStatus);
@@ -923,45 +1091,44 @@ export default function OrderDetail() {
                   color: b.color,
                   background: b.bg,
                   border: `1px solid ${b.border}`,
-                  padding: '3px 10px',
-                  borderRadius: 12,
+                  padding: '5px 14px',
+                  borderRadius: 20,
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 4
+                  gap: 6
                 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: b.color }} />
                   {b.label}
                 </span>
               );
             })()}
+
             {(() => {
               const critCount = (order.garments || []).filter((g: any) => isGarmentCritical(g)).length;
               const reassignedCount = (order.garments || []).filter((g: any) => isGarmentReassigned(g)).length;
               return (
                 <>
                   {critCount > 0 && (
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#dc2626', padding: '3px 10px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <AlertTriangle size={12} /> {critCount} Critical
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#dc2626', padding: '5px 12px', borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <AlertTriangle size={13} /> {critCount} Critical
                     </span>
                   )}
                   {reassignedCount > 0 && (
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '3px 10px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <RefreshCw size={12} /> {reassignedCount} Reassigned
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '5px 12px', borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <RefreshCw size={13} /> {reassignedCount} Reassigned
                     </span>
                   )}
                 </>
               );
             })()}
+
             {rejectedCount > 0 && (
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', background: '#fee2e2', padding: '3px 10px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <XCircle size={12} /> {rejectedCount} QC Rejected
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', background: '#fee2e2', border: '1px solid #fecaca', padding: '5px 12px', borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <XCircle size={13} /> {rejectedCount} QC Rejected
               </span>
             )}
-            <span style={{ color: '#9ca3af', fontSize: 12, marginLeft: 'auto' }}>{order.createdAt ? new Date(order.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</span>
           </div>
         </div>
-        <button className="btn btn-secondary" onClick={handleRefresh} style={{ padding: '8px 16px' }}>
-          <RefreshCw size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Refresh
-        </button>
       </div>
 
       {/* Ready for Delivery Banner */}
@@ -996,96 +1163,123 @@ export default function OrderDetail() {
       )}
 
       {/* Summary bar */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 32 }}>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 18px' }}>
-          <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Garments</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#111827' }}>{garments.length}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 28 }}>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 18px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: 4 }}>Total Garments</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>{garments.length}</div>
         </div>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 18px' }}>
-          <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Sub-Orders</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#111827' }}>{subOrders.length}</div>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 18px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: 4 }}>Partner Orders</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>{subOrders.length}</div>
         </div>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 18px' }}>
-          <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Assigned</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#16a34a' }}>{subOrders.filter(s => s.status === 'ASSIGNED').length}</div>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 18px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: 4 }}>QC Passed</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#16a34a' }}>{passedCount}</div>
         </div>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 18px' }}>
-          <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>QC Rejected</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: rejectedCount > 0 ? '#dc2626' : '#9ca3af' }}>{rejectedCount}</div>
-        </div>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 18px' }}>
-          <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>QC Passed</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#16a34a' }}>{passedCount}</div>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 18px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: 4 }}>QC Defects / Issues</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: rejectedCount > 0 ? '#dc2626' : '#64748b' }}>{rejectedCount}</div>
         </div>
       </div>
 
-      {/* Sub-Orders */}
-      <div style={{ marginBottom: 36 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 14, color: '#111827' }}>Sub-Orders</h2>
+      {/* Sub-Orders & Lifecycle Progress */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', margin: 0 }}>
+              Partner Work Orders & Lifecycles ({subOrders.length})
+            </h2>
+            <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>
+              Track partner assignment, in-progress processing, and step-by-step quality lifecycles.
+            </p>
+          </div>
+        </div>
+
         {subOrders.length === 0 ? (
-          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '40px 24px', textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
-            No sub-orders yet. Partners will be assigned automatically when available.
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '36px 20px', textAlign: 'center', color: '#64748b', fontSize: 13 }}>
+            No sub-orders assigned yet. Partners will be allocated automatically.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {subOrders.map((so) => {
               const soGarments = garments.filter(g => so.garmentIds.includes(g.garmentId));
               const primaryCat = so.garmentCategory?.split(',')[0] || '';
-              const color = tierColor[primaryCat] || '#6b7280';
+              const color = tierColor[primaryCat] || '#4f46e5';
               const bg = tierBg[primaryCat] || '#f3f4f6';
+              const total = soGarments.length || 1;
+              const isDone = so.status === 'COMPLETED' || so.status === 'DELIVERED' || so.status === 'READY_FOR_DELIVERY' || so.status === 'QC_APPROVED';
+              const done = isDone ? total : so.status === 'IN_PROCESS' || so.status === 'QC_PENDING' || so.status === 'QC_SENT' ? Math.max(1, Math.round(total / 2)) : 0;
+              const pct = Math.round((done / total) * 100);
+
+              const soQcRecord = qcRecords.find(qr => qr.subOrderId === so.id || qr.subOrderId === so.subOrderCode || qr.orderId === so.id || qr.orderId === displayId);
+              const partnerSteps = buildPartnerTimeline(so, order, soQcRecord);
+              const completedSteps = partnerSteps.filter(s => s.status === 'COMPLETED').length;
+              const totalSteps = partnerSteps.length;
+              const partnerPct = Math.round((completedSteps / totalSteps) * 100);
+
               return (
-                <div key={so.id} style={{
-                  background: '#fff',
-                  border: '1px solid #e5e7eb',
-                  borderLeft: `4px solid ${color}`,
-                  borderRadius: 10,
-                  padding: '18px 20px',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 14,
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                    <div>
-                      <div style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'monospace', marginBottom: 4 }}>{so.subOrderCode}</div>
-                      <div style={{ fontWeight: 600, fontSize: 15, color: '#111827' }}>{so.partnerName || 'Unassigned'}</div>
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>{so.partnerCode}</span>
-                        {primaryCat && <span style={{ background: bg, color, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{primaryCat}</span>}
-                        <span style={{ color: '#9ca3af' }}>· {soGarments.length} garment{soGarments.length !== 1 ? 's' : ''}</span>
-                        {(() => {
-                          const soCrit = soGarments.filter(g => isGarmentCritical(g)).length;
-                          const soReas = soGarments.filter(g => isGarmentReassigned(g)).length;
-                          return (
-                            <>
-                              {soCrit > 0 && (
-                                <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#dc2626', padding: '1px 6px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                                  <AlertTriangle size={10} /> {soCrit} Critical
-                                </span>
-                              )}
-                              {soReas > 0 && (
-                                <span style={{ fontSize: 10, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '1px 6px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                                  <RefreshCw size={10} /> {soReas} Reassigned
-                                </span>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                      {so.status === 'QC_REJECTED' && (
-                        <div style={{ marginTop: 8, padding: '6px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 11, color: '#dc2626' }}>
-                          <strong>QC Rejected:</strong> {so.rejectionReason || 'Defect found in garment'}
-                          {so.rejectedBy && <span style={{ marginLeft: 6, color: '#9ca3af' }}>by {so.rejectedBy}</span>}
+                <div
+                  key={so.id}
+                  style={{
+                    background: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderLeft: `4px solid ${color}`,
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                  }}
+                >
+                  {/* Partner Header */}
+                  <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#94a3b8', marginBottom: 2 }}>{so.subOrderCode}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{so.partnerName || 'Unassigned Partner'}</span>
+                          <span style={{ fontSize: 11, color: '#64748b', background: '#f1f5f9', padding: '2px 7px', borderRadius: 4, fontFamily: 'monospace', fontWeight: 600 }}>{so.partnerCode}</span>
+                          {primaryCat && (
+                            <span style={{ background: bg, color, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, border: `1px solid ${color}35` }}>
+                              {primaryCat}
+                            </span>
+                          )}
+                          <span style={{ fontSize: 12, color: '#64748b' }}>
+                            • {soGarments.length} garment{soGarments.length !== 1 ? 's' : ''}
+                          </span>
                         </div>
-                      )}
-                      {so.status === 'REJECTED' && (so.rejectionReason || so.rejectedBy) && (
-                        <button onClick={() => setRejectModal({ open: true, subOrder: so })} style={{ marginTop: 8, padding: '6px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 11, color: '#dc2626', cursor: 'pointer', textAlign: 'left' }}>
-                          <strong>Rejected:</strong> {so.rejectionReason ? so.rejectionReason.substring(0, 60) + (so.rejectionReason.length > 60 ? '...' : '') : 'No reason provided'}
-                          {so.rejectedBy && <span style={{ marginLeft: 6, color: '#9ca3af' }}>by {so.rejectedBy}</span>}
-                        </button>
-                      )}
+                      </div>
+
+                      {/* Critical / Reassigned tags */}
+                      {(() => {
+                        const soCrit = soGarments.filter(g => isGarmentCritical(g)).length;
+                        const soReas = soGarments.filter(g => isGarmentReassigned(g)).length;
+                        return (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            {soCrit > 0 && (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#dc2626', padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                <AlertTriangle size={10} /> {soCrit} Critical
+                              </span>
+                            )}
+                            {soReas > 0 && (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                <RefreshCw size={10} /> {soReas} Reassigned
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+
+                    {/* Right side controls */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ textAlign: 'right', minWidth: 90 }}>
+                        <div style={{ fontSize: 10, color: '#64748b', fontWeight: 500, marginBottom: 2 }}>
+                          <span>{done}/{total}</span> • <strong style={{ color: pct === 100 ? '#16a34a' : '#0f172a' }}>{pct}%</strong>
+                        </div>
+                        <div style={{ height: 4, width: 90, background: '#f1f5f9', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#16a34a' : color, borderRadius: 2, transition: 'width 0.3s' }} />
+                        </div>
+                      </div>
+
                       {(so.status === 'QC_SENT' || so.status === 'QC_PENDING' || so.status === 'QC_REJECTED') && (
                         <button
                           type="button"
@@ -1107,7 +1301,25 @@ export default function OrderDetail() {
                           <CheckCircle2 size={13} /> Approve QC
                         </button>
                       )}
-                      <button onClick={() => setViewModal({ open: true, subOrder: so, garments: soGarments })} style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', fontSize: 12, color: '#4b5563', cursor: 'pointer' }}>View</button>
+
+                      <button
+                        type="button"
+                        onClick={() => setViewModal({ open: true, subOrder: so, garments: soGarments })}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: 6,
+                          border: '1px solid #cbd5e1',
+                          background: '#fff',
+                          fontSize: 12,
+                          color: '#4338ca',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                        }}
+                      >
+                        View Details
+                      </button>
+
                       {(() => {
                         const b = getBadgeInfo(so.status);
                         return (
@@ -1128,6 +1340,112 @@ export default function OrderDetail() {
                           </span>
                         );
                       })()}
+                    </div>
+                  </div>
+
+                  {/* Rejection notice */}
+                  {so.status === 'QC_REJECTED' && (
+                    <div style={{ margin: '10px 18px', padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, color: '#dc2626' }}>
+                      <strong>QC Rejected:</strong> {so.rejectionReason || 'Defect found in garment'}
+                      {so.rejectedBy && <span style={{ marginLeft: 6, color: '#9ca3af' }}>by {so.rejectedBy}</span>}
+                    </div>
+                  )}
+
+                  {/* In-Card Lifecycle Stepper (Crisp, 6 steps, label only) */}
+                  <div style={{ padding: '10px 18px 12px', background: '#fafbfc' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
+                        Lifecycle Progress
+                      </div>
+                      <div style={{ fontSize: 10, color: completedSteps === totalSteps ? '#166534' : '#4338ca', fontWeight: 600 }}>
+                        {completedSteps} of {totalSteps} complete ({partnerPct}%)
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 6 }}>
+                      {partnerSteps.map((st) => {
+                        const isDone = st.status === 'COMPLETED';
+                        const isInProg = st.status === 'IN_PROGRESS';
+                        const isRej = st.status === 'REJECTED';
+
+                        const cardBorder = isDone ? '#bbf7d0' : isInProg ? '#bfdbfe' : isRej ? '#fecaca' : '#e2e8f0';
+                        const cardBg = isDone ? '#f0fdf4' : isInProg ? '#eff6ff' : isRej ? '#fef2f2' : '#fff';
+                        const badgeBg = isDone ? '#dcfce7' : isInProg ? '#dbeafe' : isRej ? '#fee2e2' : '#f1f5f9';
+                        const badgeColor = isDone ? '#166534' : isInProg ? '#1e40af' : isRej ? '#991b1b' : '#64748b';
+
+                        return (
+                          <div
+                            key={st.id}
+                            style={{
+                              background: cardBg,
+                              border: `1px solid ${cardBorder}`,
+                              borderRadius: 6,
+                              padding: '6px 8px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              minWidth: 0,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 18,
+                                height: 18,
+                                borderRadius: '50%',
+                                background: isDone ? '#16a34a' : isInProg ? '#2563eb' : isRej ? '#dc2626' : '#cbd5e1',
+                                color: '#fff',
+                                fontSize: 9,
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0
+                              }}
+                            >
+                              {isDone ? <Check size={11} strokeWidth={3} /> : isRej ? <XCircle size={11} /> : st.stepNum}
+                            </div>
+
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{
+                                fontWeight: 700,
+                                fontSize: 11,
+                                color: isDone ? '#14532d' : isInProg ? '#1e3a8a' : isRej ? '#7f1d1d' : '#334155',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                lineHeight: 1.2
+                              }}>
+                                {st.title}
+                              </div>
+                              {st.timeframe && isDone ? (
+                                <div style={{ fontSize: 9, color: '#16a34a', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>
+                                  {st.timeframe}
+                                </div>
+                              ) : isInProg ? (
+                                <div style={{ fontSize: 9, color: '#2563eb', fontWeight: 600, marginTop: 1 }}>
+                                  In Progress
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <span
+                              style={{
+                                fontSize: 8,
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                padding: '1px 5px',
+                                borderRadius: 3,
+                                background: badgeBg,
+                                color: badgeColor,
+                                letterSpacing: '0.02em',
+                                flexShrink: 0
+                              }}
+                            >
+                              {st.badgeText || (isDone ? 'Done' : isInProg ? 'Active' : 'Pending')}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1204,6 +1522,8 @@ export default function OrderDetail() {
                   (soForGarment && ['QC_SENT', 'QC_PENDING', 'QC_APPROVED', 'QC_REJECTED'].includes(soForGarment.status))
                 );
 
+                const itemName = (g as any).itemName || (g as any).name || (g as any).itemType || (g.category && g.category.toUpperCase() !== tier.toUpperCase() ? g.category : 'Garment');
+
                 return (
                   <tr
                     key={g.garmentId || i}
@@ -1220,7 +1540,7 @@ export default function OrderDetail() {
                     {/* Item & QR */}
                     <td style={{ padding: '14px', verticalAlign: 'top' }}>
                       <div style={{ fontWeight: 600, color: '#111827', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {g.category || 'Garment'}
+                        {itemName}
                         {isGarmentReassigned(g) ? (
                           <span style={{ fontSize: 10, fontWeight: 700, color: '#1e40af', background: '#dbeafe', border: '1px solid #93c5fd', padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                             <RefreshCw size={10} /> Reassigned
@@ -1298,8 +1618,11 @@ export default function OrderDetail() {
 
                     {/* Tier / Service */}
                     <td style={{ padding: '14px', verticalAlign: 'top' }}>
-                      <div style={{ color, fontWeight: 600 }}>{tier}</div>
-                      <div style={{ color: '#4b5563', fontSize: 12, marginTop: 4 }}>{g.serviceType || '—'}</div>
+                      <div style={{ color, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
+                        {tier}
+                      </div>
+                      <div style={{ color: '#4b5563', fontSize: 12, marginTop: 4 }}>{g.serviceType || 'Standard Care'}</div>
                     </td>
 
                     {/* Partner QC Submission */}
