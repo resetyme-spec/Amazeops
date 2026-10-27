@@ -90,6 +90,7 @@ export default function OrderDetail() {
   const [showTopDefectDetails, setShowTopDefectDetails] = useState(false);
   const [expandedGarments, setExpandedGarments] = useState({});
   const [qcModalGarment, setQcModalGarment] = useState(null);
+  const [qcWarningModal, setQcWarningModal] = useState({ open: false, pendingGarments: [] });
 
   const load = async () => {
     if (!id) return;
@@ -165,6 +166,25 @@ export default function OrderDetail() {
   const handleSubmitQC = async () => {
     if (!id || !user || !order) return;
     setError('');
+
+    // Require QC details to be updated for ALL active garments
+    const activeGarments = (order.garments || []).filter(g => {
+      const isReassigned = g.isReassigned === true || g.criticalStatus === 'REASSIGNED' || !!g.adminCriticalComment;
+      const isCritical = g.isCritical === true && !isReassigned;
+      return !isCritical && !isReassigned;
+    });
+
+    const pendingGarments = activeGarments.filter(g => {
+      const form = qcForm[g.garmentId] || {};
+      const photosCount = Object.values(form.photos || {}).filter(Boolean).length;
+      const isUpdated = !!(form.isUpdated || form.brand?.trim() || form.comments?.trim() || photosCount > 0);
+      return !isUpdated;
+    });
+
+    if (pendingGarments.length > 0) {
+      setQcWarningModal({ open: true, pendingGarments });
+      return;
+    }
     const careCategory = order.careCategory || 'Normal';
     const customerCategory = (order.customer?.category || '').toLowerCase();
     const careRequiresQC = careCategory === 'Premium' || careCategory === 'Pristine';
@@ -514,7 +534,7 @@ export default function OrderDetail() {
         {garments.map((g, idx) => {
           const form = qcForm[g.garmentId] || { brand: '', comments: '', photos: {} };
           const photosCount = Object.values(form.photos || {}).filter(Boolean).length;
-          const hasQCData = !!(form.brand || form.comments || photosCount > 0);
+          const hasQCData = !!(form.isUpdated || form.brand?.trim() || form.comments?.trim() || photosCount > 0);
 
           // Specific garment rejection check:
           const isMentionedInReason = !!reasonText && (
@@ -588,7 +608,7 @@ export default function OrderDetail() {
                     onClick={() => setQcModalGarment(g)}
                   >
                     {hasQCData ? <CheckCircle2 size={13} color="#15803d" /> : <Tag size={13} color="#ea580c" />}
-                    Update QC
+                    {hasQCData ? 'Updated' : 'Update QC'}
                   </button>
                 )}
                 {isReassignedGarment && (
@@ -1361,7 +1381,10 @@ export default function OrderDetail() {
                 <button
                   type="button"
                   className="btn btn-primary btn-full"
-                  onClick={() => setQcModalGarment(null)}
+                  onClick={() => {
+                    setForm({ isUpdated: true });
+                    setQcModalGarment(null);
+                  }}
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                 >
                   <CheckCircle2 size={16} /> Save & Close
@@ -1371,6 +1394,101 @@ export default function OrderDetail() {
           </div>
         );
       })()}
+
+      
+      {/* QC Incomplete Warning Modal */}
+      {qcWarningModal.open && (
+        <div className="modal-overlay" onClick={() => setQcWarningModal({ open: false, pendingGarments: [] })}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="modal-header" style={{ borderBottom: '1px solid #fee2e2', background: '#fef2f2' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <AlertTriangle size={20} color="#dc2626" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, color: '#991b1b', fontWeight: 800 }}>
+                    QC Incomplete
+                  </h3>
+                  <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 1 }}>
+                    All garments must be updated before submitting
+                  </div>
+                </div>
+              </div>
+              <button className="modal-close" onClick={() => setQcWarningModal({ open: false, pendingGarments: [] })}><XIcon size={20} /></button>
+            </div>
+
+            <div className="modal-body" style={{ padding: '16px 20px' }}>
+              <div style={{ padding: '10px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, color: '#92400e', fontSize: 13, lineHeight: 1.4, marginBottom: 14 }}>
+                ⚠️ Please update the QC details for <strong>all {order?.garments?.length} garments</strong> before submitting for QC.
+              </div>
+
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                Pending Garments ({qcWarningModal.pendingGarments.length})
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
+                {qcWarningModal.pendingGarments.map((g, i) => (
+                  <div
+                    key={g.garmentId}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      background: '#fff7ed',
+                      border: '1.5px solid #fed7aa',
+                      borderRadius: 10
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#9a3412' }}>
+                        {g.category || 'Garment'} · {g.garmentId}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#c2410c', marginTop: 2 }}>
+                        {g.qrCode || 'No QR'} · {g.serviceType || 'Standard'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      style={{
+                        background: '#ea580c',
+                        color: '#fff',
+                        border: 'none',
+                        fontWeight: 700,
+                        fontSize: 12,
+                        padding: '6px 12px',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}
+                      onClick={() => {
+                        setQcWarningModal({ open: false, pendingGarments: [] });
+                        setQcModalGarment(g);
+                      }}
+                    >
+                      <Tag size={13} /> Update QC
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="modal-actions" style={{ padding: '12px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setQcWarningModal({ open: false, pendingGarments: [] })}
+                style={{ minWidth: 100 }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Photo Lightbox Preview Modal */}
       {photoPreview && (
