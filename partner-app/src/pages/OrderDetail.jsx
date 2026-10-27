@@ -89,6 +89,7 @@ export default function OrderDetail() {
   // Expandable sections
   const [showTopDefectDetails, setShowTopDefectDetails] = useState(false);
   const [expandedGarments, setExpandedGarments] = useState({});
+  const [qcModalGarment, setQcModalGarment] = useState(null);
 
   const load = async () => {
     if (!id) return;
@@ -509,39 +510,11 @@ export default function OrderDetail() {
       <div className="detail-section">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <h3 className="section-title" style={{ margin: 0 }}><QrCode size={16} /> Garments ({garments.length})</h3>
-          {isAccepted && showQcForm && !isQcRejected && (
-            <button
-              type="button"
-              onClick={() => {
-                const anyOpen = Object.values(expandedGarments).some(Boolean);
-                if (anyOpen) {
-                  setExpandedGarments({});
-                } else {
-                  const all = {};
-                  garments.forEach(g => { all[g.garmentId] = true; });
-                  setExpandedGarments(all);
-                }
-              }}
-              style={{
-                background: '#ffffff',
-                border: '1px solid #cbd5e1',
-                borderRadius: 6,
-                padding: '4px 10px',
-                fontSize: 11,
-                fontWeight: 600,
-                color: '#475569',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4
-              }}
-            >
-              {Object.values(expandedGarments).some(Boolean) ? <>Collapse All <ChevronUp size={13} /></> : <>Expand All <ChevronDown size={13} /></>}
-            </button>
-          )}
         </div>
         {garments.map((g, idx) => {
           const form = qcForm[g.garmentId] || { brand: '', comments: '', photos: {} };
+          const photosCount = Object.values(form.photos || {}).filter(Boolean).length;
+          const hasQCData = !!(form.brand || form.comments || photosCount > 0);
 
           // Specific garment rejection check:
           const isMentionedInReason = !!reasonText && (
@@ -571,10 +544,51 @@ export default function OrderDetail() {
                   <p className="garment-detail">
                     {g.qrCode || '—'} · <span style={{ color: TIER_COLORS[g.garmentCategory] || TIER_COLORS[g.category] || '#6b7280', fontWeight: 600 }}>{g.garmentCategory || g.category}</span> · {g.serviceType}
                   </p>
+                  {hasQCData && (
+                    <div style={{ marginTop: 5, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '1px 6px', borderRadius: 8, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <CheckCircle2 size={10} /> QC Added ({photosCount} photo{photosCount !== 1 ? 's' : ''})
+                      </span>
+                      {form.brand && (
+                        <span style={{ fontSize: 10, background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0', padding: '1px 6px', borderRadius: 8, fontWeight: 600 }}>
+                          🏷️ {form.brand}
+                        </span>
+                      )}
+                      {form.garmentQuality && (
+                        <span style={{ fontSize: 10, background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', padding: '1px 6px', borderRadius: 8, fontWeight: 700 }}>
+                          {'⭐'.repeat(form.garmentQuality)} {form.garmentQuality}/5
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {canAccept && !isCriticalGarment && !isReassignedGarment && (
                   <button className="btn btn-critical btn-sm" onClick={() => { setCriticalModal({ open: true, garment: g }); setCriticalComments(''); setCriticalPhotos(['', '', '']); }}>
                     <AlertTriangle size={14} /> Mark Critical
+                  </button>
+                )}
+                {canSubmitQC && !isCriticalGarment && !isReassignedGarment && (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    style={{
+                      background: hasQCData ? '#f0fdf4' : '#fff7ed',
+                      border: hasQCData ? '1.5px solid #86efac' : '1.5px solid #ea580c',
+                      color: hasQCData ? '#15803d' : '#c2410c',
+                      fontWeight: 700,
+                      padding: '5px 12px',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                    }}
+                    onClick={() => setQcModalGarment(g)}
+                  >
+                    {hasQCData ? <CheckCircle2 size={13} color="#15803d" /> : <Tag size={13} color="#ea580c" />}
+                    Update QC
                   </button>
                 )}
                 {isReassignedGarment && (
@@ -665,273 +679,7 @@ export default function OrderDetail() {
                 </div>
               )}
 
-              {/* QC Upload Form for INITIAL QC ONLY (when order is IN_PROCESS and start QC clicked) */}
-              {isAccepted && showQcForm && !isQcRejected && !isQcApproved && (() => {
-                const isExpanded = !!expandedGarments[g.garmentId];
-                const photosCount = Object.values(form.photos || {}).filter(Boolean).length;
-                const hasFormData = !!(form.brand || form.comments || photosCount > 0);
-
-                return (
-                  <div style={{ marginTop: 8 }}>
-                    <button
-                      type="button"
-                      onClick={() => setExpandedGarments(prev => ({ ...prev, [g.garmentId]: !prev[g.garmentId] }))}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 12px',
-                        borderRadius: 8,
-                        border: isExpanded ? '1.5px solid #ea580c' : '1px solid #fed7aa',
-                        background: isExpanded ? '#fff7ed' : '#ffffff',
-                        color: '#c2410c',
-                        fontWeight: 700,
-                        fontSize: 12,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-                      }}
-                    >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <Tag size={13} />
-                        <span>QC Inspection Form</span>
-                        {hasFormData && (
-                          <span style={{ fontSize: 10, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '1px 6px', borderRadius: 10, fontWeight: 700 }}>
-                            {photosCount > 0 ? `${photosCount} photo${photosCount > 1 ? 's' : ''} added ✓` : 'Updated ✓'}
-                          </span>
-                        )}
-                      </span>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#9a3412', fontWeight: 700 }}>
-                        {isExpanded ? <>Hide Form <ChevronUp size={14} /></> : <>Open Form <ChevronDown size={14} /></>}
-                      </span>
-                    </button>
-
-                    {isExpanded && (
-                      <div className="qc-form" style={{ marginTop: 8, padding: 12, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8 }}>
-                        {/* Brand */}
-                        <div className="form-group">
-                          <label><Tag size={14} /> Brand</label>
-                          <input
-                            className="form-input"
-                            value={form.brand}
-                            onChange={e => setQcForm({ ...qcForm, [g.garmentId]: { ...form, brand: e.target.value } })}
-                            placeholder="Enter brand name"
-                          />
-                        </div>
-
-                        {/* Quality of Garment (Star Rating out of 5 stars) */}
-                        <div className="form-group" style={{ marginBottom: 14 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
-                              <Star size={15} color="#f59e0b" fill="#f59e0b" /> Quality of Garment *
-                            </label>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: 12, border: '1px solid #fde68a' }}>
-                              {QUALITY_LABELS[form.garmentQuality || 5]}
-                            </span>
                           </div>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: '#fff', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0' }}>
-                            {[1, 2, 3, 4, 5].map((star) => {
-                              const isFilled = (form.garmentQuality || 5) >= star;
-                              return (
-                                <button
-                                  key={star}
-                                  type="button"
-                                  onClick={() => {
-                                    setQcForm({
-                                      ...qcForm,
-                                      [g.garmentId]: { ...form, garmentQuality: star }
-                                    });
-                                  }}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    padding: '2px 4px',
-                                    transition: 'transform 0.15s ease',
-                                    transform: isFilled ? 'scale(1.15)' : 'scale(1)'
-                                  }}
-                                  title={`${star} Star${star > 1 ? 's' : ''}`}
-                                >
-                                  <Star
-                                    size={24}
-                                    color={isFilled ? '#f59e0b' : '#cbd5e1'}
-                                    fill={isFilled ? '#f59e0b' : '#f8fafc'}
-                                  />
-                                </button>
-                              );
-                            })}
-                            <span style={{ fontSize: 11, color: '#64748b', marginLeft: 6 }}>
-                              Select 1 to 5 stars
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Solvent Used (Multiple Choices) */}
-                        <div className="form-group" style={{ marginBottom: 14 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
-                              <Droplets size={15} color="#0284c7" /> Solvent Used (Multiple Choices)
-                            </label>
-                            <span style={{ fontSize: 11, color: '#0369a1', fontWeight: 600 }}>
-                              {(form.solvents || []).length > 0 ? `${(form.solvents || []).length} selected` : 'Select multiple'}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, background: '#fff', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e2e8f0' }}>
-                            {STANDARD_SOLVENTS.map((solv) => {
-                              const isSelected = (form.solvents || []).includes(solv);
-                              return (
-                                <button
-                                  key={solv}
-                                  type="button"
-                                  onClick={() => {
-                                    const current = form.solvents || [];
-                                    const next = isSelected ? current.filter(s => s !== solv) : [...current, solv];
-                                    setQcForm({
-                                      ...qcForm,
-                                      [g.garmentId]: { ...form, solvents: next }
-                                    });
-                                  }}
-                                  style={{
-                                    padding: '5px 11px',
-                                    borderRadius: 18,
-                                    fontSize: 11,
-                                    fontWeight: isSelected ? 700 : 500,
-                                    cursor: 'pointer',
-                                    border: isSelected ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
-                                    background: isSelected ? '#e0f2fe' : '#f8fafc',
-                                    color: isSelected ? '#0369a1' : '#475569',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 5,
-                                    transition: 'all 0.15s ease',
-                                    boxShadow: isSelected ? '0 1px 3px rgba(2,132,199,0.15)' : 'none'
-                                  }}
-                                >
-                                  <span style={{ fontSize: 12, fontWeight: 900 }}>{isSelected ? '✓' : '+'}</span>
-                                  <span>{solv}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Comments */}
-                        <div className="form-group">
-                          <label><MessageSquare size={14} /> Comments</label>
-                          <textarea
-                            className="form-input textarea"
-                            value={form.comments}
-                            onChange={e => setQcForm({ ...qcForm, [g.garmentId]: { ...form, comments: e.target.value } })}
-                            placeholder="Any quality notes..."
-                            rows={2}
-                          />
-                        </div>
-
-                        {/* Photos: Front, Back, Other */}
-                        <div className="photo-inputs">
-                          {[
-                            { slot: 'front', label: 'Front Photo' },
-                            { slot: 'back', label: 'Back Photo' },
-                            { slot: 'other', label: 'Other Photo' },
-                          ].map(({ slot, label }) => (
-                            <div key={slot} className="photo-input-group" style={{ marginBottom: 8 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                                <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>
-                                  {label}
-                                </label>
-                                {form.photos?.[slot] && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setQcForm({
-                                        ...qcForm,
-                                        [g.garmentId]: {
-                                          ...form,
-                                          photos: { ...form.photos, [slot]: '' }
-                                        }
-                                      });
-                                    }}
-                                    style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 11, cursor: 'pointer', padding: 0 }}
-                                  >
-                                    Remove
-                                  </button>
-                                )}
-                              </div>
-
-                              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                <input
-                                  className="form-input"
-                                  style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
-                                  value={form.photos?.[slot] || ''}
-                                  onChange={e => setQcForm({
-                                    ...qcForm,
-                                    [g.garmentId]: {
-                                      ...form,
-                                      photos: { ...form.photos, [slot]: e.target.value }
-                                    }
-                                  })}
-                                  placeholder="Enter Photo URL or click Upload"
-                                />
-                                {(() => {
-                                  const isUp = uploadingSlots[`qc_${g.garmentId}_${slot}`];
-                                  return (
-                                    <label
-                                      style={{
-                                        padding: '7px 10px',
-                                        background: isUp ? '#f1f5f9' : '#eff6ff',
-                                        border: '1px solid #bfdbfe',
-                                        borderRadius: 6,
-                                        fontSize: 11,
-                                        fontWeight: 600,
-                                        color: isUp ? '#94a3b8' : '#2563eb',
-                                        cursor: isUp ? 'wait' : 'pointer',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 4,
-                                        whiteSpace: 'nowrap'
-                                      }}
-                                    >
-                                      {isUp ? <RefreshCw size={13} className="spinning" /> : <Camera size={13} />}
-                                      {isUp ? 'Uploading...' : 'Upload'}
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        disabled={isUp}
-                                        style={{ display: 'none' }}
-                                        onChange={e => {
-                                          const f = e.target.files?.[0];
-                                          if (f) handlePhotoUpload(g.garmentId, slot, f);
-                                        }}
-                                      />
-                                    </label>
-                                  );
-                                })()}
-                              </div>
-
-                              {form.photos?.[slot] && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                                  <img
-                                    src={form.photos[slot]}
-                                    alt={slot}
-                                    onClick={() => setPhotoPreview({ url: form.photos[slot], title: `${g.category || 'Garment'} — ${label}` })}
-                                    style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer' }}
-                                  />
-                                  <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Attached</span>
-                                  {form.photos[slot].includes('amazonaws.com') && (
-                                    <span style={{ fontSize: 10, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>☁️ S3</span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
           );
         })}
       </div>
@@ -944,13 +692,7 @@ export default function OrderDetail() {
           </button>
         )}
 
-        {canSubmitQC && !showQcForm && (
-          <button className="btn btn-outline btn-full" onClick={() => setShowQcForm(true)}>
-            <Tag size={18} /> Start QC
-          </button>
-        )}
-
-        {canSubmitQC && showQcForm && (
+        {canSubmitQC && (
           <button className="btn btn-primary btn-full" onClick={handleSubmitQC} disabled={actionLoading}>
             <CheckCircle2 size={18} /> Submit for QC
           </button>
@@ -1355,6 +1097,280 @@ export default function OrderDetail() {
           </div>
         </div>
       )}
+
+      
+      {/* Garment QC Inspection Modal */}
+      {qcModalGarment && (() => {
+        const g = qcModalGarment;
+        const form = qcForm[g.garmentId] || { brand: '', comments: '', photos: {}, garmentQuality: 5, solvents: [] };
+        const setForm = (updater) => {
+          setQcForm(prev => {
+            const current = prev[g.garmentId] || { brand: '', comments: '', photos: {}, garmentQuality: 5, solvents: [] };
+            const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater };
+            return { ...prev, [g.garmentId]: next };
+          });
+        };
+
+        return (
+          <div className="modal-overlay" onClick={() => setQcModalGarment(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 520, maxHeight: '88vh', overflowY: 'auto' }}>
+              <div className="modal-header" style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10, borderBottom: '1px solid #e2e8f0' }}>
+                <div>
+                  <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6, fontSize: 16 }}>
+                    <Tag size={18} color="#ea580c" /> QC Inspection — {g.category || 'Garment'}
+                  </h3>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                    ID: <b>{g.garmentId}</b> · {g.qrCode || 'No QR'} · {g.serviceType || 'Standard'}
+                  </div>
+                </div>
+                <button className="modal-close" onClick={() => setQcModalGarment(null)}><XIcon size={20} /></button>
+              </div>
+
+              <div className="modal-body" style={{ padding: '16px 16px 8px' }}>
+                {/* Brand */}
+                <div className="form-group" style={{ marginBottom: 14 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <Tag size={14} color="#ea580c" /> Brand
+                  </label>
+                  <input
+                    className="form-input"
+                    value={form.brand || ''}
+                    onChange={e => setForm({ brand: e.target.value })}
+                    placeholder="Enter brand name (e.g. Zara, Raymond, Gucci)"
+                    style={{ fontSize: 13 }}
+                  />
+                </div>
+
+                {/* Quality of Garment (Star Rating out of 5 stars) */}
+                <div className="form-group" style={{ marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
+                      <Star size={15} color="#f59e0b" fill="#f59e0b" /> Quality of Garment *
+                    </label>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: 12, border: '1px solid #fde68a' }}>
+                      {QUALITY_LABELS[form.garmentQuality || 5]}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: '#fff', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0' }}>
+                    {[1, 2, 3, 4, 5].map((star) => {
+                      const isFilled = (form.garmentQuality || 5) >= star;
+                      return (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setForm({ garmentQuality: star })}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: 2,
+                            display: 'flex',
+                            alignItems: 'center',
+                            transition: 'transform 0.1s'
+                          }}
+                          onMouseDown={e => e.currentTarget.style.transform = 'scale(0.85)'}
+                          onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                          <Star
+                            size={26}
+                            color={isFilled ? '#f59e0b' : '#cbd5e1'}
+                            fill={isFilled ? '#f59e0b' : 'none'}
+                          />
+                        </button>
+                      );
+                    })}
+                    <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: '#475569' }}>
+                      {form.garmentQuality || 5} / 5
+                    </span>
+                  </div>
+                </div>
+
+                {/* Standard Solvents Used */}
+                <div className="form-group" style={{ marginBottom: 14 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <Droplets size={14} color="#0284c7" /> Solvents / Chemicals Used
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {STANDARD_SOLVENTS.map(solvent => {
+                      const currentSolvents = Array.isArray(form.solvents) ? form.solvents : [];
+                      const isSelected = currentSolvents.includes(solvent);
+                      return (
+                        <button
+                          key={solvent}
+                          type="button"
+                          onClick={() => {
+                            const updated = isSelected
+                              ? currentSolvents.filter(s => s !== solvent)
+                              : [...currentSolvents, solvent];
+                            setForm({ solvents: updated });
+                          }}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 16,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            border: isSelected ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
+                            background: isSelected ? '#e0f2fe' : '#ffffff',
+                            color: isSelected ? '#0369a1' : '#475569',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {isSelected && <span>✓</span>}
+                          {solvent}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Comments */}
+                <div className="form-group" style={{ marginBottom: 14 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <MessageSquare size={14} color="#64748b" /> Inspection Comments
+                  </label>
+                  <textarea
+                    className="form-input textarea"
+                    value={form.comments || ''}
+                    onChange={e => setForm({ comments: e.target.value })}
+                    placeholder="Describe garment condition, stains treated, pre-existing damages, special care applied..."
+                    rows={3}
+                    style={{ fontSize: 13 }}
+                  />
+                </div>
+
+                {/* Photos */}
+                <div className="form-group" style={{ marginBottom: 8 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <Camera size={14} color="#64748b" /> Inspection Photos (Front, Back, Other)
+                  </label>
+                  {[
+                    { slot: 'front', label: 'Front Photo' },
+                    { slot: 'back', label: 'Back Photo' },
+                    { slot: 'other', label: 'Other Photo' },
+                  ].map(({ slot, label }) => {
+                    const slotKey = `qc_${g.garmentId}_${slot}`;
+                    const isUploading = !!uploadingSlots[slotKey];
+                    const photoUrl = form.photos?.[slot];
+
+                    return (
+                      <div key={slot} style={{ marginBottom: 10, background: '#f8fafc', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{label}</span>
+                          {photoUrl && (
+                            <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <CheckCircle2 size={12} /> Attached
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input
+                            className="form-input"
+                            style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
+                            value={photoUrl || ''}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setForm(prev => ({
+                                ...prev,
+                                photos: { ...(prev.photos || {}), [slot]: val }
+                              }));
+                            }}
+                            placeholder={`${label} Photo URL or upload below`}
+                          />
+                          <label
+                            style={{
+                              padding: '7px 12px',
+                              background: isUploading ? '#f1f5f9' : '#fff7ed',
+                              border: '1.5px solid #fed7aa',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: isUploading ? '#94a3b8' : '#ea580c',
+                              cursor: isUploading ? 'wait' : 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {isUploading ? <RefreshCw size={13} className="spinning" /> : <Camera size={13} />}
+                            {isUploading ? 'Uploading...' : 'Upload'}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              disabled={isUploading}
+                              style={{ display: 'none' }}
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (file) handlePhotoUpload(g.garmentId, slot, file);
+                              }}
+                            />
+                          </label>
+                          {photoUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForm(prev => {
+                                  const updated = { ...(prev.photos || {}) };
+                                  delete updated[slot];
+                                  return { ...prev, photos: updated };
+                                });
+                              }}
+                              style={{
+                                padding: '7px 9px',
+                                background: '#fee2e2',
+                                border: '1px solid #fca5a5',
+                                borderRadius: 6,
+                                color: '#b91c1c',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center'
+                              }}
+                              title="Remove photo"
+                            >
+                              <XIcon size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        {photoUrl && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                            <img
+                              src={photoUrl}
+                              alt={slot}
+                              onClick={() => setPhotoPreview({ url: photoUrl, title: `${g.category || 'Garment'} — ${label}` })}
+                              style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6, border: '1.5px solid #cbd5e1', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: 11, color: '#64748b' }}>Click image to zoom</span>
+                            {photoUrl.includes('amazonaws.com') && (
+                              <span style={{ fontSize: 10, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>☁️ S3</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="modal-actions" style={{ padding: '12px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-full"
+                  onClick={() => setQcModalGarment(null)}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                >
+                  <CheckCircle2 size={16} /> Save & Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Photo Lightbox Preview Modal */}
       {photoPreview && (
