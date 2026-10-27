@@ -572,7 +572,7 @@ export default function OrderDetail() {
                     {g.qrCode || '—'} · <span style={{ color: TIER_COLORS[g.garmentCategory] || TIER_COLORS[g.category] || '#6b7280', fontWeight: 600 }}>{g.garmentCategory || g.category}</span> · {g.serviceType}
                   </p>
                 </div>
-                {!isRejected && !isQcApproved && !isCriticalGarment && !isReassignedGarment && (
+                {canAccept && !isCriticalGarment && !isReassignedGarment && (
                   <button className="btn btn-critical btn-sm" onClick={() => { setCriticalModal({ open: true, garment: g }); setCriticalComments(''); setCriticalPhotos(['', '', '']); }}>
                     <AlertTriangle size={14} /> Mark Critical
                   </button>
