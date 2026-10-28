@@ -3,13 +3,43 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle2, XCircle, Truck, QrCode, Tag, MessageSquare,
   User, AlertTriangle, ImagePlus, X as XIcon, Camera, Upload, RefreshCw, Eye,
-  ChevronDown, ChevronUp, Star, Droplets
+  ChevronDown, ChevronUp, Star, Droplets, Sparkles
 } from 'lucide-react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery } from '../lib/api';
 import { uploadToS3 } from '../lib/s3';
 
-const TIER_COLORS = { GOLD: '#d97706', YELLOW: '#ea580c', ORANGE: '#ea580c', BLUE: '#3b82f6' };
+// Care Categories: Signature (Gold), Pristine (Orange), Premium (Blue)
+const TIER_COLORS = {
+  SIGNATURE: '#d97706',
+  GOLD: '#d97706',
+  PRISTINE: '#ea580c',
+  ORANGE: '#ea580c',
+  YELLOW: '#ea580c',
+  PREMIUM: '#2563eb',
+  BLUE: '#2563eb',
+};
+const TIER_BG = {
+  SIGNATURE: '#fef3c7',
+  GOLD: '#fef3c7',
+  PRISTINE: '#ffedd5',
+  ORANGE: '#ffedd5',
+  YELLOW: '#ffedd5',
+  PREMIUM: '#eff6ff',
+  BLUE: '#eff6ff',
+};
+
+function getCareDetails(cat) {
+  const raw = String(cat || 'PREMIUM').toUpperCase();
+  const c = raw.includes('SIGNATURE') || raw === 'GOLD' ? 'SIGNATURE' : raw.includes('PRISTINE') || raw === 'ORANGE' || raw === 'YELLOW' ? 'PRISTINE' : 'PREMIUM';
+  const label = c === 'SIGNATURE' ? 'Signature' : c === 'PRISTINE' ? 'Pristine' : 'Premium';
+  const icon = c === 'SIGNATURE' ? '👑' : c === 'PRISTINE' ? '✨' : '💎';
+  const color = TIER_COLORS[c];
+  const bg = TIER_BG[c];
+  return { key: c, label, icon, color, bg };
+}
 
 const QUALITY_LABELS = {
   5: '5/5 — Excellent (Like New)',
@@ -19,14 +49,17 @@ const QUALITY_LABELS = {
   1: '1/5 — Heavy Wear / Aged Fabric'
 };
 
-const STANDARD_SOLVENTS = [
-  'Hydrocarbon (DF-2000)',
-  'Perchloroethylene (Perc)',
-  'Liquid Silicone (GreenEarth)',
-  'Wet Cleaning (Water-based)',
-  'Modified Alcohol (Sensene)',
-  'Eco-Solv',
-  'Specialty Spotting Agent',
+const SUGGESTED_STAIN_TYPES = [
+  { code: 'S01', name: 'Tea / Coffee', examples: 'Tea, filter coffee' },
+  { code: 'S02', name: 'Oil / Grease', examples: 'Cooking oil, ghee' },
+  { code: 'S03', name: 'Food / Curry', examples: 'Gravy, masala, turmeric' },
+  { code: 'S04', name: 'Green / Grass', examples: 'Grass, leaves' },
+  { code: 'S05', name: 'Ink', examples: 'Pen, marker' },
+  { code: 'S06', name: 'Cosmetics', examples: 'Lipstick, makeup' },
+  { code: 'S07', name: 'Sweat / Body Soil', examples: 'Collar, underarm' },
+  { code: 'S08', name: 'Blood / Protein', examples: 'Blood, egg' },
+  { code: 'S09', name: 'Dye Transfer', examples: 'Colour bleeding' },
+  { code: 'S10', name: 'Unknown / Other', examples: 'Unidentified stain' },
 ];
 
 function careBadge(cat) {
@@ -78,9 +111,29 @@ export default function OrderDetail() {
     comments: '',
     photos: { front: '', back: '', other: '' },
     garmentQuality: 5,
-    solvents: []
+    solvents: [],
+    stainTypes: []
   });
   const [reQcSubmitting, setReQcSubmitting] = useState(false);
+
+  // Suggested Stain Type Master
+  const [availableStainTypes, setAvailableStainTypes] = useState(SUGGESTED_STAIN_TYPES);
+
+  useEffect(() => {
+    async function fetchStains() {
+      try {
+        const snap = await getDocs(collection(db, 'stainTypes'));
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => s.active !== false);
+          list.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+          if (list.length > 0) setAvailableStainTypes(list);
+        }
+      } catch (e) {
+        // Fallback to SUGGESTED_STAIN_TYPES
+      }
+    }
+    fetchStains();
+  }, []);
 
   // Photo Preview Lightbox
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -106,12 +159,14 @@ export default function OrderDetail() {
       const updates = data.garmentUpdates || data.qcRecord?.garmentUpdates || [];
       data.garments.forEach(g => {
         const prev = updates.find(u => u.garmentId === g.garmentId);
+        const stains = prev?.stainTypes || prev?.solvents || g.stainTypes || g.solvents || [];
         initial[g.garmentId] = {
           brand: prev?.brand || g.brand || '',
           comments: prev?.comments || g.comments || '',
           photos: prev?.photos || g.photos || { front: '', back: '', other: '' },
           garmentQuality: prev?.garmentQuality || g.garmentQuality || 5,
-          solvents: prev?.solvents || g.solvents || [],
+          solvents: stains,
+          stainTypes: stains,
         };
       });
       setQcForm(initial);
@@ -153,6 +208,63 @@ export default function OrderDetail() {
     }
   };
 
+  const handleBatchPhotoUpload = async (garmentId, files) => {
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files).slice(0, 3);
+    const slots = ['front', 'back', 'other'];
+    const currentPhotos = { ...(qcForm[garmentId]?.photos || {}) };
+
+    let targetSlots = [];
+    if (fileList.length >= 3) {
+      targetSlots = ['front', 'back', 'other'];
+    } else {
+      const emptySlots = slots.filter(s => !currentPhotos[s]);
+      if (emptySlots.length >= fileList.length) {
+        targetSlots = emptySlots.slice(0, fileList.length);
+      } else {
+        targetSlots = slots.slice(0, fileList.length);
+      }
+    }
+
+    const batchKey = `qc_batch_${garmentId}`;
+    setUploadingSlots(prev => ({ ...prev, [batchKey]: true }));
+    setError('');
+
+    try {
+      const uploadPromises = fileList.map(async (file, idx) => {
+        const slot = targetSlots[idx] || slots[idx];
+        const s3Url = await uploadToS3(file, 'qc-photos', `${id}_${garmentId}_${slot}`);
+        return { slot, s3Url };
+      });
+
+      const uploaded = await Promise.all(uploadPromises);
+      setQcForm(prev => {
+        const current = prev[garmentId] || { brand: '', comments: '', photos: {} };
+        const updatedPhotos = { ...(current.photos || {}) };
+        uploaded.forEach(({ slot, s3Url }) => {
+          updatedPhotos[slot] = s3Url;
+        });
+        return {
+          ...prev,
+          [garmentId]: {
+            ...current,
+            photos: updatedPhotos,
+            isUpdated: true
+          }
+        };
+      });
+    } catch (err) {
+      console.error('Failed to upload QC photos:', err);
+      setError(`Failed to upload photo: ${err.message}`);
+    } finally {
+      setUploadingSlots(prev => {
+        const next = { ...prev };
+        delete next[batchKey];
+        return next;
+      });
+    }
+  };
+
   const handleAccept = async () => {
     if (!id || !user) return;
     setActionLoading(true);
@@ -185,15 +297,9 @@ export default function OrderDetail() {
       setQcWarningModal({ open: true, pendingGarments });
       return;
     }
-    const careCategory = order.careCategory || 'Normal';
-    const customerCategory = (order.customer?.category || '').toLowerCase();
-    const careRequiresQC = careCategory === 'Premium' || careCategory === 'Pristine';
-    const customerRequiresQC = customerCategory === 'signature care' || customerCategory === "l'amaze privé member" || customerCategory === "l'amaze prime";
-    const requiresQC = careRequiresQC || customerRequiresQC;
-
-    let triggerReason = '';
-    if (careRequiresQC) triggerReason = `${careCategory} care requires QC photos, brand, and comments`;
-    else if (customerRequiresQC) triggerReason = `${customerCategory} customer requires QC photos, brand, and comments`;
+    const careCategory = order.careCategory || 'Premium';
+    const requiresQC = true;
+    const triggerReason = `${careCategory} care requires QC photos, brand, and comments`;
 
     const updates = order.garments.map(g => {
       const form = qcForm[g.garmentId] || { brand: '', comments: '', photos: {} };
@@ -212,7 +318,8 @@ export default function OrderDetail() {
         comments: form.comments,
         photos: form.photos,
         garmentQuality: form.garmentQuality || 5,
-        solvents: form.solvents || []
+        solvents: form.stainTypes || form.solvents || [],
+        stainTypes: form.stainTypes || form.solvents || []
       };
     });
 
@@ -228,6 +335,7 @@ export default function OrderDetail() {
   // Handle garment-wise Re-QC Modal
   const openReQcModal = (garment, rej) => {
     const existingForm = qcForm[garment.garmentId] || {};
+    const stains = existingForm.stainTypes || existingForm.solvents || garment.stainTypes || garment.solvents || [];
     setReQcModal({
       open: true,
       garment,
@@ -236,7 +344,8 @@ export default function OrderDetail() {
       comments: existingForm.comments || '',
       photos: existingForm.photos || garment.photos || { front: '', back: '', other: '' },
       garmentQuality: existingForm.garmentQuality || garment.garmentQuality || 5,
-      solvents: existingForm.solvents || garment.solvents || []
+      solvents: stains,
+      stainTypes: stains
     });
   };
 
@@ -262,6 +371,59 @@ export default function OrderDetail() {
       setUploadingSlots(prev => {
         const next = { ...prev };
         delete next[slotKey];
+        return next;
+      });
+    }
+  };
+
+  const handleBatchModalPhotoUpload = async (files) => {
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files).slice(0, 3);
+    const slots = ['front', 'back', 'other'];
+    const currentPhotos = { ...(reQcModal.photos || {}) };
+
+    let targetSlots = [];
+    if (fileList.length >= 3) {
+      targetSlots = ['front', 'back', 'other'];
+    } else {
+      const emptySlots = slots.filter(s => !currentPhotos[s]);
+      if (emptySlots.length >= fileList.length) {
+        targetSlots = emptySlots.slice(0, fileList.length);
+      } else {
+        targetSlots = slots.slice(0, fileList.length);
+      }
+    }
+
+    const batchKey = 'modal_batch';
+    setUploadingSlots(prev => ({ ...prev, [batchKey]: true }));
+    setError('');
+
+    try {
+      const garmentId = reQcModal.garment?.garmentId || 'garment';
+      const uploadPromises = fileList.map(async (file, idx) => {
+        const slot = targetSlots[idx] || slots[idx];
+        const s3Url = await uploadToS3(file, 'qc-photos', `${id}_reQC_${garmentId}_${slot}`);
+        return { slot, s3Url };
+      });
+
+      const uploaded = await Promise.all(uploadPromises);
+      setReQcModal(prev => {
+        const updatedPhotos = { ...(prev.photos || {}) };
+        uploaded.forEach(({ slot, s3Url }) => {
+          updatedPhotos[slot] = s3Url;
+        });
+        return {
+          ...prev,
+          photos: updatedPhotos
+        };
+      });
+    } catch (err) {
+      console.error('Failed to upload Re-QC photos:', err);
+      setError(`Failed to upload Re-QC photo: ${err.message}`);
+    } finally {
+      setUploadingSlots(prev => {
+        const next = { ...prev };
+        delete next[batchKey];
         return next;
       });
     }
@@ -314,7 +476,8 @@ export default function OrderDetail() {
           comments: reQcModal.comments || '',
           photos: reQcModal.photos || {},
           garmentQuality: reQcModal.garmentQuality || 5,
-          solvents: reQcModal.solvents || [],
+          solvents: reQcModal.stainTypes || reQcModal.solvents || [],
+          stainTypes: reQcModal.stainTypes || reQcModal.solvents || [],
         },
         user
       );
@@ -327,7 +490,8 @@ export default function OrderDetail() {
         comments: '',
         photos: { front: '', back: '', other: '' },
         garmentQuality: 5,
-        solvents: []
+        solvents: [],
+        stainTypes: []
       });
       setSuccessBanner(`Re-QC submitted successfully for ${garmentLabel}!`);
       setTimeout(() => setSuccessBanner(''), 4000);
@@ -562,7 +726,7 @@ export default function OrderDetail() {
                 <div style={{ flex: 1 }}>
                   <p className="garment-id">{g.category || 'Garment'} · {g.garmentId}</p>
                   <p className="garment-detail">
-                    {g.qrCode || '—'} · <span style={{ color: TIER_COLORS[g.garmentCategory] || TIER_COLORS[g.category] || '#6b7280', fontWeight: 600 }}>{g.garmentCategory || g.category}</span> · {g.serviceType}
+                    {g.qrCode || '—'} · <span style={{ color: getCareDetails(g.garmentCategory || order.careCategory).color, fontWeight: 700 }}>{getCareDetails(g.garmentCategory || order.careCategory).label}</span> · {g.serviceType}
                   </p>
                   {hasQCData && (
                     <div style={{ marginTop: 5, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -958,48 +1122,97 @@ export default function OrderDetail() {
                   </div>
                 </div>
 
-                {/* Solvent Used (Multiple Choices) */}
+                {/* Suggested Stain Type Master (Dropdown) */}
                 <div className="form-group" style={{ marginBottom: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
-                      <Droplets size={14} color="#0284c7" /> Solvent Used
+                      <Sparkles size={14} color="#d97706" /> Suggested Stain Type Master
                     </label>
-                    <span style={{ fontSize: 11, color: '#0369a1' }}>
-                      {(reQcModal.solvents || []).length > 0 ? `${(reQcModal.solvents || []).length} selected` : 'Select multiple'}
+                    <span style={{ fontSize: 11, color: '#b45309', fontWeight: 600 }}>
+                      {(reQcModal.stainTypes || reQcModal.solvents || []).length > 0
+                        ? `${(reQcModal.stainTypes || reQcModal.solvents || []).length} selected`
+                        : 'Select stains if any'}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, background: '#fff', padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1' }}>
-                    {STANDARD_SOLVENTS.map((solv) => {
-                      const isSelected = (reQcModal.solvents || []).includes(solv);
+                  <select
+                    className="form-input"
+                    value=""
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      const current = reQcModal.stainTypes || reQcModal.solvents || [];
+                      if (!current.includes(val)) {
+                        const next = [...current, val];
+                        setReQcModal(prev => ({ ...prev, stainTypes: next, solvents: next }));
+                      }
+                    }}
+                    style={{
+                      fontSize: 12,
+                      padding: '7px 10px',
+                      background: '#fff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 8,
+                      width: '100%'
+                    }}
+                  >
+                    <option value="">-- Tap to Select Stain Type (S01 - S10) --</option>
+                    {availableStainTypes.map(stain => {
+                      const stainLabel = `${stain.code} ${stain.name}`;
+                      const current = reQcModal.stainTypes || reQcModal.solvents || [];
+                      const isSelected = current.includes(stainLabel) || current.includes(stain.code) || current.includes(stain.name);
                       return (
-                        <button
-                          key={solv}
-                          type="button"
-                          onClick={() => {
-                            const current = reQcModal.solvents || [];
-                            const next = isSelected ? current.filter(s => s !== solv) : [...current, solv];
-                            setReQcModal(prev => ({ ...prev, solvents: next }));
-                          }}
-                          style={{
-                            padding: '4px 9px',
-                            borderRadius: 16,
-                            fontSize: 11,
-                            fontWeight: isSelected ? 700 : 500,
-                            cursor: 'pointer',
-                            border: isSelected ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
-                            background: isSelected ? '#e0f2fe' : '#f8fafc',
-                            color: isSelected ? '#0369a1' : '#475569',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4
-                          }}
-                        >
-                          <span>{isSelected ? '✓' : '+'}</span>
-                          <span>{solv}</span>
-                        </button>
+                        <option key={stain.code} value={stainLabel} disabled={isSelected}>
+                          {stain.code} - {stain.name} {stain.examples ? `(${stain.examples})` : ''} {isSelected ? '✓ Added' : ''}
+                        </option>
                       );
                     })}
-                  </div>
+                  </select>
+
+                  {/* Selected Stains Chips */}
+                  {(reQcModal.stainTypes || reQcModal.solvents || []).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                      {(reQcModal.stainTypes || reQcModal.solvents || []).map(stainItem => (
+                        <span
+                          key={stainItem}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: '#fef3c7',
+                            border: '1px solid #fde68a',
+                            color: '#92400e',
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 600
+                          }}
+                        >
+                          <span>{stainItem}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const current = reQcModal.stainTypes || reQcModal.solvents || [];
+                              const next = current.filter(s => s !== stainItem);
+                              setReQcModal(prev => ({ ...prev, stainTypes: next, solvents: next }));
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#b45309',
+                              cursor: 'pointer',
+                              padding: 0,
+                              fontSize: 13,
+                              fontWeight: 800,
+                              lineHeight: 1
+                            }}
+                            title="Remove stain"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Comments */}
@@ -1014,91 +1227,148 @@ export default function OrderDetail() {
                   />
                 </div>
 
-                {/* 3 Photos: Front, Back, Other */}
+                {/* 3 Photos: Front, Back, Other (Single Upload Button) */}
                 <div className="form-group" style={{ marginBottom: 14 }}>
-                  <label><Camera size={14} /> 3 Photos (Front, Back, Other) *</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
-                    {[
-                      { slot: 'front', label: '1. Front Photo' },
-                      { slot: 'back', label: '2. Back Photo' },
-                      { slot: 'other', label: '3. Other Photo' }
-                    ].map(({ slot, label }) => (
-                      <div key={slot} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>{label}</span>
-                          {reQcModal.photos?.[slot] && (
-                            <button
-                              type="button"
-                              onClick={() => setReQcModal(prev => ({ ...prev, photos: { ...prev.photos, [slot]: '' } }))}
-                              style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
-                            >
-                              Remove
-                            </button>
-                          )}
+                  {(() => {
+                    const isUploading = !!uploadingSlots['modal_batch'];
+                    const photosCount = ['front', 'back', 'other'].filter(s => !!reQcModal.photos?.[s]).length;
+
+                    return (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
+                            <Camera size={14} color="#2563eb" /> 3 Photos (Front, Back, Other) *
+                          </label>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: photosCount === 3 ? '#16a34a' : '#ea580c' }}>
+                            {photosCount} / 3 Uploaded
+                          </span>
                         </div>
 
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <input
-                            className="form-input"
-                            style={{ flex: 1, padding: '6px 10px', fontSize: 12 }}
-                            value={reQcModal.photos?.[slot] || ''}
-                            onChange={e => setReQcModal(prev => ({
-                              ...prev,
-                              photos: { ...prev.photos, [slot]: e.target.value }
-                            }))}
-                            placeholder="Enter Photo URL or Upload"
-                          />
-                          {(() => {
-                            const isUp = uploadingSlots[`modal_${slot}`];
-                            return (
-                              <label style={{
-                                padding: '6px 12px',
-                                background: isUp ? '#f1f5f9' : '#eff6ff',
-                                border: '1px solid #bfdbfe',
-                                borderRadius: 6,
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: isUp ? '#94a3b8' : '#2563eb',
-                                cursor: isUp ? 'wait' : 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                whiteSpace: 'nowrap'
-                              }}>
-                                {isUp ? <RefreshCw size={14} className="spinning" /> : <Camera size={14} />}
-                                {isUp ? 'Uploading...' : 'Upload'}
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  disabled={isUp}
-                                  style={{ display: 'none' }}
-                                  onChange={e => {
-                                    const f = e.target.files?.[0];
-                                    if (f) handleModalPhotoUpload(slot, f);
-                                  }}
-                                />
-                              </label>
-                            );
-                          })()}
-                        </div>
-
-                        {reQcModal.photos?.[slot] && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                            <img
-                              src={reQcModal.photos[slot]}
-                              alt={slot}
-                              onClick={() => setPhotoPreview({ url: reQcModal.photos[slot], title: label })}
-                              style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 4, border: '1px solid #cbd5e1', cursor: 'pointer' }}
-                            />
-                            <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Attached</span>
-                            {reQcModal.photos[slot].includes('amazonaws.com') && (
-                              <span style={{ fontSize: 10, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>☁️ S3</span>
+                        {/* Single Upload Button */}
+                        <div style={{ marginBottom: 8 }}>
+                          <label
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 8,
+                              width: '100%',
+                              padding: '10px 14px',
+                              background: isUploading ? '#f1f5f9' : '#eff6ff',
+                              border: isUploading ? '1.5px dashed #94a3b8' : '1.5px dashed #3b82f6',
+                              borderRadius: 8,
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: isUploading ? '#64748b' : '#1d4ed8',
+                              cursor: isUploading ? 'wait' : 'pointer',
+                              boxSizing: 'border-box'
+                            }}
+                          >
+                            {isUploading ? (
+                              <>
+                                <RefreshCw size={15} className="spinning" />
+                                <span>Uploading Photos to S3...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Camera size={15} />
+                                <span>{photosCount === 0 ? 'Upload 3 Photos (Front, Back, Other)' : photosCount === 3 ? '✓ 3 Photos Attached (Click to Replace)' : `Upload Photos (${3 - photosCount} remaining)`}</span>
+                              </>
                             )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              disabled={isUploading}
+                              style={{ display: 'none' }}
+                              onChange={e => {
+                                if (e.target.files && e.target.files.length > 0) {
+                                  handleBatchModalPhotoUpload(e.target.files);
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        {/* 3 Photos Preview Cards */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                          {[
+                            { slot: 'front', label: 'Front' },
+                            { slot: 'back', label: 'Back' },
+                            { slot: 'other', label: 'Other' }
+                          ].map(({ slot, label }) => {
+                            const photoUrl = reQcModal.photos?.[slot];
+                            return (
+                              <div
+                                key={slot}
+                                style={{
+                                  background: '#f8fafc',
+                                  border: photoUrl ? '1.5px solid #86efac' : '1px dashed #cbd5e1',
+                                  borderRadius: 8,
+                                  padding: 6,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  minHeight: 88,
+                                  justifyContent: 'center',
+                                  position: 'relative'
+                                }}
+                              >
+                                {photoUrl ? (
+                                  <>
+                                    <div style={{ width: '100%', height: 60, borderRadius: 6, overflow: 'hidden', background: '#e2e8f0', position: 'relative', marginBottom: 4 }}>
+                                      <img
+                                        src={photoUrl}
+                                        alt={label}
+                                        onClick={() => setPhotoPreview({ url: photoUrl, title: label })}
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReQcModal(prev => ({ ...prev, photos: { ...prev.photos, [slot]: '' } }));
+                                        }}
+                                        style={{
+                                          position: 'absolute',
+                                          top: 2,
+                                          right: 2,
+                                          background: 'rgba(239, 68, 68, 0.95)',
+                                          color: '#ffffff',
+                                          border: 'none',
+                                          borderRadius: '50%',
+                                          width: 18,
+                                          height: 18,
+                                          fontSize: 10,
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          lineHeight: 1
+                                        }}
+                                        title="Remove photo"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                    <span style={{ fontSize: 10.5, fontWeight: 700, color: '#15803d' }}>
+                                      ✓ {label}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: '#94a3b8' }}>
+                                    <Camera size={16} style={{ opacity: 0.4, marginBottom: 2 }} />
+                                    <span style={{ fontSize: 10.5, fontWeight: 600, color: '#64748b' }}>{label}</span>
+                                    <span style={{ fontSize: 9.5, color: '#94a3b8' }}>Pending</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Submit Re-QC Button */}
@@ -1205,46 +1475,98 @@ export default function OrderDetail() {
                   </div>
                 </div>
 
-                {/* Standard Solvents Used */}
+                {/* Suggested Stain Type Master (Dropdown) */}
                 <div className="form-group" style={{ marginBottom: 14 }}>
-                  <label style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <Droplets size={14} color="#0284c7" /> Solvents / Chemicals Used
-                  </label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {STANDARD_SOLVENTS.map(solvent => {
-                      const currentSolvents = Array.isArray(form.solvents) ? form.solvents : [];
-                      const isSelected = currentSolvents.includes(solvent);
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', margin: 0 }}>
+                      <Sparkles size={15} color="#d97706" /> Suggested Stain Type Master
+                    </label>
+                    <span style={{ fontSize: 11, color: '#b45309', fontWeight: 600 }}>
+                      {((form.stainTypes || form.solvents || []).length > 0)
+                        ? `${(form.stainTypes || form.solvents || []).length} stain(s) selected`
+                        : 'Select stains if any'}
+                    </span>
+                  </div>
+
+                  <select
+                    className="form-input"
+                    value=""
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      const currentStains = Array.isArray(form.stainTypes || form.solvents) ? [...(form.stainTypes || form.solvents)] : [];
+                      if (!currentStains.includes(val)) {
+                        const updated = [...currentStains, val];
+                        setForm({ stainTypes: updated, solvents: updated });
+                      }
+                    }}
+                    style={{
+                      fontSize: 12.5,
+                      padding: '7px 10px',
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 8,
+                      width: '100%'
+                    }}
+                  >
+                    <option value="">-- Tap to Select Stain Type (S01 - S10) --</option>
+                    {availableStainTypes.map(stain => {
+                      const stainLabel = `${stain.code} ${stain.name}`;
+                      const currentStains = Array.isArray(form.stainTypes || form.solvents) ? (form.stainTypes || form.solvents) : [];
+                      const isSelected = currentStains.includes(stainLabel) || currentStains.includes(stain.code) || currentStains.includes(stain.name);
                       return (
-                        <button
-                          key={solvent}
-                          type="button"
-                          onClick={() => {
-                            const updated = isSelected
-                              ? currentSolvents.filter(s => s !== solvent)
-                              : [...currentSolvents, solvent];
-                            setForm({ solvents: updated });
-                          }}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: 16,
-                            fontSize: 11,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            border: isSelected ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
-                            background: isSelected ? '#e0f2fe' : '#ffffff',
-                            color: isSelected ? '#0369a1' : '#475569',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          {isSelected && <span>✓</span>}
-                          {solvent}
-                        </button>
+                        <option key={stain.code} value={stainLabel} disabled={isSelected}>
+                          {stain.code} - {stain.name} {stain.examples ? `(${stain.examples})` : ''} {isSelected ? '✓ Added' : ''}
+                        </option>
                       );
                     })}
-                  </div>
+                  </select>
+
+                  {/* Selected Stains Chips */}
+                  {((form.stainTypes || form.solvents || []).length > 0) && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                      {(form.stainTypes || form.solvents || []).map(stainItem => (
+                        <span
+                          key={stainItem}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: '#fef3c7',
+                            border: '1px solid #fde68a',
+                            color: '#92400e',
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            fontSize: 11.5,
+                            fontWeight: 600
+                          }}
+                        >
+                          <span>{stainItem}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const currentStains = form.stainTypes || form.solvents || [];
+                              const updated = currentStains.filter(s => s !== stainItem);
+                              setForm({ stainTypes: updated, solvents: updated });
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#b45309',
+                              cursor: 'pointer',
+                              padding: 0,
+                              fontSize: 13,
+                              fontWeight: 800,
+                              lineHeight: 1
+                            }}
+                            title="Remove stain"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Comments */}
@@ -1263,117 +1585,151 @@ export default function OrderDetail() {
                 </div>
 
                 {/* Photos */}
-                <div className="form-group" style={{ marginBottom: 8 }}>
-                  <label style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <Camera size={14} color="#64748b" /> Inspection Photos (Front, Back, Other)
-                  </label>
-                  {[
-                    { slot: 'front', label: 'Front Photo' },
-                    { slot: 'back', label: 'Back Photo' },
-                    { slot: 'other', label: 'Other Photo' },
-                  ].map(({ slot, label }) => {
-                    const slotKey = `qc_${g.garmentId}_${slot}`;
-                    const isUploading = !!uploadingSlots[slotKey];
-                    const photoUrl = form.photos?.[slot];
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  {(() => {
+                    const isUploading = !!uploadingSlots[`qc_batch_${g.garmentId}`];
+                    const photosCount = ['front', 'back', 'other'].filter(s => !!form.photos?.[s]).length;
 
                     return (
-                      <div key={slot} style={{ marginBottom: 10, background: '#f8fafc', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{label}</span>
-                          {photoUrl && (
-                            <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                              <CheckCircle2 size={12} /> Attached
-                            </span>
-                          )}
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <label style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, color: '#0f172a', margin: 0 }}>
+                            <Camera size={15} color="#2563eb" /> Inspection Photos (3 required)
+                          </label>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: photosCount === 3 ? '#16a34a' : '#ea580c' }}>
+                            {photosCount} / 3 Photos
+                          </span>
                         </div>
 
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <input
-                            className="form-input"
-                            style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
-                            value={photoUrl || ''}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setForm(prev => ({
-                                ...prev,
-                                photos: { ...(prev.photos || {}), [slot]: val }
-                              }));
-                            }}
-                            placeholder={`${label} Photo URL or upload below`}
-                          />
+                        {/* Single Upload Button */}
+                        <div style={{ marginBottom: 8 }}>
                           <label
                             style={{
-                              padding: '7px 12px',
-                              background: isUploading ? '#f1f5f9' : '#fff7ed',
-                              border: '1.5px solid #fed7aa',
-                              borderRadius: 6,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color: isUploading ? '#94a3b8' : '#ea580c',
-                              cursor: isUploading ? 'wait' : 'pointer',
-                              display: 'inline-flex',
+                              display: 'flex',
                               alignItems: 'center',
-                              gap: 4,
-                              whiteSpace: 'nowrap'
+                              justifyContent: 'center',
+                              gap: 8,
+                              width: '100%',
+                              padding: '10px 14px',
+                              background: isUploading ? '#f1f5f9' : '#eff6ff',
+                              border: isUploading ? '1.5px dashed #94a3b8' : '1.5px dashed #3b82f6',
+                              borderRadius: 8,
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: isUploading ? '#64748b' : '#1d4ed8',
+                              cursor: isUploading ? 'wait' : 'pointer',
+                              boxSizing: 'border-box'
                             }}
                           >
-                            {isUploading ? <RefreshCw size={13} className="spinning" /> : <Camera size={13} />}
-                            {isUploading ? 'Uploading...' : 'Upload'}
+                            {isUploading ? (
+                              <>
+                                <RefreshCw size={15} className="spinning" />
+                                <span>Uploading Photos to S3...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Camera size={15} />
+                                <span>{photosCount === 0 ? 'Upload 3 Photos (Front, Back, Other)' : photosCount === 3 ? '✓ 3 Photos Attached (Click to Replace)' : `Upload Photos (${3 - photosCount} remaining)`}</span>
+                              </>
+                            )}
                             <input
                               type="file"
+                              multiple
                               accept="image/*"
                               disabled={isUploading}
                               style={{ display: 'none' }}
                               onChange={e => {
-                                const file = e.target.files?.[0];
-                                if (file) handlePhotoUpload(g.garmentId, slot, file);
+                                if (e.target.files && e.target.files.length > 0) {
+                                  handleBatchPhotoUpload(g.garmentId, e.target.files);
+                                }
                               }}
                             />
                           </label>
-                          {photoUrl && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setForm(prev => {
-                                  const updated = { ...(prev.photos || {}) };
-                                  delete updated[slot];
-                                  return { ...prev, photos: updated };
-                                });
-                              }}
-                              style={{
-                                padding: '7px 9px',
-                                background: '#fee2e2',
-                                border: '1px solid #fca5a5',
-                                borderRadius: 6,
-                                color: '#b91c1c',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center'
-                              }}
-                              title="Remove photo"
-                            >
-                              <XIcon size={14} />
-                            </button>
-                          )}
                         </div>
 
-                        {photoUrl && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                            <img
-                              src={photoUrl}
-                              alt={slot}
-                              onClick={() => setPhotoPreview({ url: photoUrl, title: `${g.category || 'Garment'} — ${label}` })}
-                              style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6, border: '1.5px solid #cbd5e1', cursor: 'pointer' }}
-                            />
-                            <span style={{ fontSize: 11, color: '#64748b' }}>Click image to zoom</span>
-                            {photoUrl.includes('amazonaws.com') && (
-                              <span style={{ fontSize: 10, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>☁️ S3</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                        {/* 3 Photos Preview Cards */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                          {[
+                            { slot: 'front', label: 'Front Photo' },
+                            { slot: 'back', label: 'Back Photo' },
+                            { slot: 'other', label: 'Other Photo' }
+                          ].map(({ slot, label }) => {
+                            const photoUrl = form.photos?.[slot];
+                            return (
+                              <div
+                                key={slot}
+                                style={{
+                                  background: '#f8fafc',
+                                  border: photoUrl ? '1.5px solid #86efac' : '1px dashed #cbd5e1',
+                                  borderRadius: 8,
+                                  padding: 6,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  minHeight: 88,
+                                  justifyContent: 'center',
+                                  position: 'relative'
+                                }}
+                              >
+                                {photoUrl ? (
+                                  <>
+                                    <div style={{ width: '100%', height: 60, borderRadius: 6, overflow: 'hidden', background: '#e2e8f0', position: 'relative', marginBottom: 4 }}>
+                                      <img
+                                        src={photoUrl}
+                                        alt={label}
+                                        onClick={() => setPhotoPreview({ url: photoUrl, title: `${g.category || 'Garment'} — ${label}` })}
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setForm(prev => {
+                                            const updated = { ...(prev.photos || {}) };
+                                            delete updated[slot];
+                                            return { ...prev, photos: updated };
+                                          });
+                                        }}
+                                        style={{
+                                          position: 'absolute',
+                                          top: 2,
+                                          right: 2,
+                                          background: 'rgba(239, 68, 68, 0.95)',
+                                          color: '#ffffff',
+                                          border: 'none',
+                                          borderRadius: '50%',
+                                          width: 18,
+                                          height: 18,
+                                          fontSize: 10,
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          lineHeight: 1
+                                        }}
+                                        title="Remove photo"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                    <span style={{ fontSize: 10.5, fontWeight: 700, color: '#15803d' }}>
+                                      ✓ {label.replace(' Photo', '')}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: '#94a3b8' }}>
+                                    <Camera size={16} style={{ opacity: 0.4, marginBottom: 2 }} />
+                                    <span style={{ fontSize: 10.5, fontWeight: 600, color: '#64748b' }}>{label.replace(' Photo', '')}</span>
+                                    <span style={{ fontSize: 9.5, color: '#94a3b8' }}>Pending</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
                     );
-                  })}
+                  })()}
                 </div>
               </div>
 

@@ -743,8 +743,24 @@ export default function OrdersPage() {
   return garments.filter(g => isGarmentReassigned(g)).length;
  }
 
- const tierColor: Record<string, string> = { GOLD: '#d97706', ORANGE: '#ea580c', BLUE: '#3b82f6' };
- const tierBg: Record<string, string> = { GOLD: '#fef3c7', ORANGE: '#ffedd5', BLUE: '#dbeafe' };
+ const tierColor: Record<string, string> = {
+  SIGNATURE: '#d97706',
+  GOLD: '#d97706',
+  PRISTINE: '#ea580c',
+  ORANGE: '#ea580c',
+  YELLOW: '#ea580c',
+  PREMIUM: '#2563eb',
+  BLUE: '#2563eb',
+ };
+ const tierBg: Record<string, string> = {
+  SIGNATURE: '#fef3c7',
+  GOLD: '#fef3c7',
+  PRISTINE: '#ffedd5',
+  ORANGE: '#ffedd5',
+  YELLOW: '#ffedd5',
+  PREMIUM: '#eff6ff',
+  BLUE: '#eff6ff',
+ };
 
  const filtered = orders.filter(o => {
    const displayId = o.orderNumber || o.orderId || o.id || '';
@@ -762,11 +778,18 @@ export default function OrdersPage() {
   }).sort((a, b) => getOrderTimestamp(b) - getOrderTimestamp(a));
 
  function careBadge(cat?: string) {
-  const c = (cat || 'Normal').toLowerCase();
-  const crown = c === 'premium' ? '👑' : c === 'pristine' ? '🥈' : '🖤';
-  const color = c === 'premium' ? '#d97706' : '#64748b';
-  const bg = c === 'premium' ? '#fef3c7' : '#f1f5f9';
-  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, color, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>{crown} {cat || 'Normal'}</span>;
+  const raw = (cat || 'PREMIUM').toUpperCase();
+  const c = raw.includes('SIGNATURE') || raw === 'GOLD' ? 'SIGNATURE' : raw.includes('PRISTINE') || raw === 'ORANGE' || raw === 'YELLOW' ? 'PRISTINE' : 'PREMIUM';
+  const icon = c === 'SIGNATURE' ? '👑' : c === 'PRISTINE' ? '✨' : '💎';
+  const label = c === 'SIGNATURE' ? 'Signature' : c === 'PRISTINE' ? 'Pristine' : 'Premium';
+  const color = tierColor[c];
+  const bg = tierBg[c];
+  const border = c === 'SIGNATURE' ? '#fde68a' : c === 'PRISTINE' ? '#fed7aa' : '#bfdbfe';
+  return (
+   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, color, border: `1px solid ${border}`, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
+    {icon} {label}
+   </span>
+  );
  }
 
  function customerLabel(name: string, category?: string) {
@@ -969,7 +992,7 @@ export default function OrdersPage() {
         <div></div>
         <div>Order & Customer</div>
         <div>Partner Assigned</div>
-        <div>Care & Tier</div>
+        <div>Care Category</div>
         <div>Items</div>
         <div>Status</div>
         <div>Date</div>
@@ -1064,20 +1087,7 @@ export default function OrdersPage() {
              <span style={{ fontSize: 12, color: '#475569', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {customer.name || '—'}
              </span>
-             {customer.category && (
-              <span style={{
-               fontSize: 9,
-               fontWeight: 700,
-               padding: '1px 5px',
-               borderRadius: 4,
-               background: customer.category === 'SIGNATURE' ? '#fdf4ff' : customer.category === 'PRIME' ? '#eff6ff' : '#f0fdf4',
-               color: customer.category === 'SIGNATURE' ? '#9333ea' : customer.category === 'PRIME' ? '#2563eb' : '#16a34a',
-               border: `1px solid ${customer.category === 'SIGNATURE' ? '#e9d5ff' : customer.category === 'PRIME' ? '#bfdbfe' : '#bbf7d0'}`,
-               letterSpacing: '0.03em'
-              }}>
-               {customer.category}
-              </span>
-             )}
+
             </div>
            </div>
 
@@ -1115,25 +1125,9 @@ export default function OrdersPage() {
             )}
            </div>
 
-           {/* 4. Care & Tier */}
+           {/* 4. Care Category */}
            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', paddingRight: 8 }}>
             {careBadge(order.careCategory)}
-            {cats.map(cat => (
-             <span
-              key={cat}
-              style={{
-               fontSize: 10,
-               fontWeight: 700,
-               background: tierBg[cat] || '#f1f5f9',
-               color: tierColor[cat] || '#64748b',
-               border: `1px solid ${tierColor[cat] ? tierColor[cat] + '35' : '#e2e8f0'}`,
-               padding: '2px 6px',
-               borderRadius: 4
-              }}
-             >
-              {cat}
-             </span>
-            ))}
            </div>
 
            {/* 5. Items */}

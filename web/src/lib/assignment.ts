@@ -44,10 +44,13 @@ export function assignGarmentsToPartners(
   const results: AssignmentResult[] = [];
   let subNum = 1;
 
-  // Normalize: treat YELLOW and ORANGE as the same category
+  // Normalize: Signature (Gold), Pristine (Orange), Premium (Blue)
   const normalizeCat = (c: any) => {
-   const s = String(c || '');
-   return s === 'YELLOW' || s === 'ORANGE' ? 'ORANGE' : s;
+    const s = String(c || '').toUpperCase();
+    if (s === 'SIGNATURE' || s === 'GOLD') return 'SIGNATURE';
+    if (s === 'PRISTINE' || s === 'ORANGE' || s === 'YELLOW') return 'PRISTINE';
+    if (s === 'PREMIUM' || s === 'BLUE') return 'PREMIUM';
+    return s || 'PREMIUM';
   };
 
   for (const [cat, group] of groups) {

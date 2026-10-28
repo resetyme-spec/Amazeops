@@ -4,7 +4,24 @@ import { Package, Clock, Search, RefreshCw, Eye, X, Shirt, CheckCircle2, Truck, 
 import { useAuth } from '../contexts/AuthContext';
 import { fetchOrdersByPartner, acceptOrder, initiateDelivery } from '../lib/api';
 
-const TIER_COLORS = { GOLD: '#d97706', YELLOW: '#ea580c', ORANGE: '#ea580c', BLUE: '#3b82f6' };
+const TIER_COLORS = {
+  SIGNATURE: '#d97706',
+  GOLD: '#d97706',
+  PRISTINE: '#ea580c',
+  ORANGE: '#ea580c',
+  YELLOW: '#ea580c',
+  PREMIUM: '#2563eb',
+  BLUE: '#2563eb',
+};
+const TIER_BG = {
+  SIGNATURE: '#fef3c7',
+  GOLD: '#fef3c7',
+  PRISTINE: '#ffedd5',
+  ORANGE: '#ffedd5',
+  YELLOW: '#ffedd5',
+  PREMIUM: '#eff6ff',
+  BLUE: '#eff6ff',
+};
 const STATUS_FILTERS = [
  { label: 'All', value: '' },
  { label: 'Assigned', value: 'ASSIGNED' },
@@ -19,14 +36,16 @@ const STATUS_FILTERS = [
 ];
 
 function careBadge(cat) {
- const c = (cat || 'Normal').toLowerCase();
- const crown = c === 'premium' ? '👑' : c === 'pristine' ? '🥈' : '🖤';
- const color = c === 'premium' ? '#92400e' : c === 'pristine' ? '#1e293b' : '#334155';
- const bg = c === 'premium' ? '#fef3c7' : '#ffffff';
- const border = c === 'premium' ? '#fcd34d' : '#cbd5e1';
+ const raw = String(cat || 'PREMIUM').toUpperCase();
+ const c = raw.includes('SIGNATURE') || raw === 'GOLD' ? 'SIGNATURE' : raw.includes('PRISTINE') || raw === 'ORANGE' || raw === 'YELLOW' ? 'PRISTINE' : 'PREMIUM';
+ const label = c === 'SIGNATURE' ? 'Signature' : c === 'PRISTINE' ? 'Pristine' : 'Premium';
+ const icon = c === 'SIGNATURE' ? '👑' : c === 'PRISTINE' ? '✨' : '💎';
+ const color = TIER_COLORS[c];
+ const bg = TIER_BG[c];
+ const border = c === 'SIGNATURE' ? '#fde68a' : c === 'PRISTINE' ? '#fed7aa' : '#bfdbfe';
  return (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, color, border: `1px solid ${border}`, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
-   {crown} {cat || 'Normal'}
+   {icon} {label}
   </span>
  );
 }

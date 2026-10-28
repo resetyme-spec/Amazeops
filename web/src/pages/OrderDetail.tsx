@@ -2,7 +2,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Settings, RefreshCw, AlertTriangle, CheckCircle2,
   XCircle, Image as ImageIcon, Camera, Upload, X, MessageSquare, Eye, Tag, Truck,
-  Star, Droplets, Check, Clock
+  Star, Droplets, Check, Clock, Sparkles
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { fetchOrderById } from '../lib/api';
@@ -12,8 +12,25 @@ import type { Order, Partner, SubOrder, Garment, QCRecord } from '../types';
 import { assignGarmentsToPartners } from '../lib/assignment';
 import { useAuth } from '../contexts/AuthContext';
 
-const tierColor: Record<string, string> = { GOLD: '#d97706', YELLOW: '#ea580c', ORANGE: '#ea580c', BLUE: '#3b82f6' };
-const tierBg: Record<string, string> = { GOLD: '#fef3c7', YELLOW: '#ffedd5', ORANGE: '#ffedd5', BLUE: '#dbeafe' };
+// Care Categories: Signature (Gold), Pristine (Orange), Premium (Blue)
+const tierColor: Record<string, string> = {
+  SIGNATURE: '#d97706',
+  GOLD: '#d97706',
+  PRISTINE: '#ea580c',
+  ORANGE: '#ea580c',
+  YELLOW: '#ea580c',
+  PREMIUM: '#2563eb',
+  BLUE: '#2563eb',
+};
+const tierBg: Record<string, string> = {
+  SIGNATURE: '#fef3c7',
+  GOLD: '#fef3c7',
+  PRISTINE: '#ffedd5',
+  ORANGE: '#ffedd5',
+  YELLOW: '#ffedd5',
+  PREMIUM: '#eff6ff',
+  BLUE: '#eff6ff',
+};
 
 const REJECTION_REASONS = [
   'Stain not removed',
@@ -34,11 +51,18 @@ const QUALITY_LABELS: Record<number, string> = {
 };
 
 function careBadge(cat?: string): React.ReactNode {
-  const c = (cat || 'Normal').toLowerCase();
-  const crown = c === 'premium' ? '👑' : c === 'pristine' ? '🥈' : '🖤';
-  const color = c === 'premium' ? '#d97706' : '#9ca3af';
-  const bg = c === 'premium' ? '#fef3c7' : '#f3f4f6';
-  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, color, padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>{crown} {cat || 'Normal'}</span>;
+  const raw = (cat || 'PREMIUM').toUpperCase();
+  const c = raw.includes('SIGNATURE') || raw === 'GOLD' ? 'SIGNATURE' : raw.includes('PRISTINE') || raw === 'ORANGE' || raw === 'YELLOW' ? 'PRISTINE' : 'PREMIUM';
+  const icon = c === 'SIGNATURE' ? '👑' : c === 'PRISTINE' ? '✨' : '💎';
+  const label = c === 'SIGNATURE' ? 'Signature' : c === 'PRISTINE' ? 'Pristine' : 'Premium';
+  const color = tierColor[c];
+  const bg = tierBg[c];
+  const border = c === 'SIGNATURE' ? '#fde68a' : c === 'PRISTINE' ? '#fed7aa' : '#bfdbfe';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: bg, color, border: `1px solid ${border}`, padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, letterSpacing: '0.02em' }}>
+      {icon} {label}
+    </span>
+  );
 }
 
 function customerLabel(name: string, category: string): React.ReactNode {
@@ -1103,19 +1127,7 @@ export default function OrderDetail() {
               <span style={{ fontSize: 13, color: '#475569', fontWeight: 500 }}>
                 Customer: <strong style={{ color: '#0f172a' }}>{customer.name || 'Unknown'}</strong>
               </span>
-              {customer.category && (
-                <span style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  padding: '2px 8px',
-                  borderRadius: 5,
-                  background: (customer.category || '').toLowerCase().includes('prime') ? '#fef3c7' : '#f1f5f9',
-                  color: (customer.category || '').toLowerCase().includes('prime') ? '#b45309' : '#475569',
-                  border: `1px solid ${(customer.category || '').toLowerCase().includes('prime') ? '#fde68a' : '#e2e8f0'}`
-                }}>
-                  {customer.category}
-                </span>
-              )}
+
               {careBadge(order.careCategory)}
             </div>
           </div>
@@ -1243,9 +1255,11 @@ export default function OrderDetail() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {subOrders.map((so) => {
               const soGarments = garments.filter(g => so.garmentIds.includes(g.garmentId));
-              const primaryCat = so.garmentCategory?.split(',')[0] || '';
-              const color = tierColor[primaryCat] || '#4f46e5';
-              const bg = tierBg[primaryCat] || '#f3f4f6';
+              const rawCat = (so.garmentCategory?.split(',')[0] || order.careCategory || 'PREMIUM').toUpperCase();
+              const primaryCat = rawCat.includes('SIGNATURE') || rawCat === 'GOLD' ? 'SIGNATURE' : rawCat.includes('PRISTINE') || rawCat === 'ORANGE' || rawCat === 'YELLOW' ? 'PRISTINE' : 'PREMIUM';
+              const primaryLabel = primaryCat === 'SIGNATURE' ? 'Signature' : primaryCat === 'PRISTINE' ? 'Pristine' : 'Premium';
+              const color = tierColor[primaryCat] || '#2563eb';
+              const bg = tierBg[primaryCat] || '#eff6ff';
               const total = soGarments.length || 1;
               const isDone = so.status === 'COMPLETED' || so.status === 'DELIVERED' || so.status === 'READY_FOR_DELIVERY' || so.status === 'QC_APPROVED';
               const done = isDone ? total : so.status === 'IN_PROCESS' || so.status === 'QC_PENDING' || so.status === 'QC_SENT' ? Math.max(1, Math.round(total / 2)) : 0;
@@ -1277,11 +1291,9 @@ export default function OrderDetail() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{so.partnerName || 'Unassigned Partner'}</span>
                           <span style={{ fontSize: 11, color: '#64748b', background: '#f1f5f9', padding: '2px 7px', borderRadius: 4, fontFamily: 'monospace', fontWeight: 600 }}>{so.partnerCode}</span>
-                          {primaryCat && (
-                            <span style={{ background: bg, color, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, border: `1px solid ${color}35` }}>
-                              {primaryCat}
-                            </span>
-                          )}
+                          <span style={{ background: bg, color, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, border: `1px solid ${color}35` }}>
+                            {primaryLabel}
+                          </span>
                           <span style={{ fontSize: 12, color: '#64748b' }}>
                             • {soGarments.length} garment{soGarments.length !== 1 ? 's' : ''}
                           </span>
@@ -1512,7 +1524,7 @@ export default function OrderDetail() {
               <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
                 <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em', width: 40 }}>#</th>
                 <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em', width: 180 }}>Item & QR</th>
-                <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em', width: 110 }}>Tier / Service</th>
+                <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em', width: 130 }}>Care / Service</th>
                 <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Partner QC Submission</th>
                 <th style={{ textAlign: 'left', padding: '12px 14px', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em' }}>QC Status & Defect Review</th>
                 <th style={{ textAlign: 'right', padding: '12px 14px', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.04em', width: 170 }}>Action</th>
@@ -1520,8 +1532,10 @@ export default function OrderDetail() {
             </thead>
             <tbody>
               {garments.map((g, i) => {
-                const tier = g.garmentCategory || 'GOLD';
-                const color = tierColor[tier] || '#6b7280';
+                const gCareRaw = (g.garmentCategory || order.careCategory || 'PREMIUM').toUpperCase();
+                const gCare = gCareRaw.includes('SIGNATURE') || gCareRaw === 'GOLD' ? 'SIGNATURE' : gCareRaw.includes('PRISTINE') || gCareRaw === 'ORANGE' || gCareRaw === 'YELLOW' ? 'PRISTINE' : 'PREMIUM';
+                const color = tierColor[gCare] || '#2563eb';
+                const gCareLabel = gCare === 'SIGNATURE' ? 'Signature' : gCare === 'PRISTINE' ? 'Pristine' : 'Premium';
 
                 // Look up QC update for this garment (from qcRecords or garment updates)
                 const gUpdate = qcRecords.flatMap(r => r.garmentUpdates || []).find(u => u.garmentId === g.garmentId)
@@ -1563,7 +1577,7 @@ export default function OrderDetail() {
                   (soForGarment && ['QC_SENT', 'QC_PENDING', 'QC_APPROVED', 'QC_REJECTED'].includes(soForGarment.status))
                 );
 
-                const itemName = (g as any).itemName || (g as any).name || (g as any).itemType || (g.category && g.category.toUpperCase() !== tier.toUpperCase() ? g.category : 'Garment');
+                const itemName = (g as any).itemName || (g as any).name || (g as any).itemType || (g.category && g.category.toUpperCase() !== gCare.toUpperCase() ? g.category : 'Garment');
 
                 return (
                   <tr
@@ -1657,11 +1671,11 @@ export default function OrderDetail() {
                       )}
                     </td>
 
-                    {/* Tier / Service */}
+                    {/* Care / Service */}
                     <td style={{ padding: '14px', verticalAlign: 'top' }}>
                       <div style={{ color, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-                        {tier}
+                        {gCareLabel}
                       </div>
                       <div style={{ color: '#4b5563', fontSize: 12, marginTop: 4 }}>{g.serviceType || 'Standard Care'}</div>
                     </td>
@@ -1713,18 +1727,20 @@ export default function OrderDetail() {
                             <div style={{ color: '#9ca3af', fontSize: 11, marginBottom: 6 }}>No comments</div>
                           )}
 
-                          {/* Quality Rating & Solvents */}
+                          {/* Quality Rating & Stain Types */}
                           {((gUpdate as any)?.garmentQuality || (g as any).garmentQuality) && (
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fef3c7', border: '1px solid #fde68a', color: '#b45309', padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700, marginRight: 6, marginBottom: 4 }}>
                               <span>{'⭐'.repeat(Number((gUpdate as any)?.garmentQuality || (g as any).garmentQuality || 5))}</span>
                               <span>{((gUpdate as any)?.garmentQuality || (g as any).garmentQuality)}/5 Quality</span>
                             </div>
                           )}
-                          {(((gUpdate as any)?.solvents && (gUpdate as any).solvents.length > 0) || ((g as any).solvents && (g as any).solvents.length > 0)) && (
+                          {(((gUpdate as any)?.stainTypes && (gUpdate as any).stainTypes.length > 0) || ((gUpdate as any)?.solvents && (gUpdate as any).solvents.length > 0) || ((g as any).stainTypes && (g as any).stainTypes.length > 0) || ((g as any).solvents && (g as any).solvents.length > 0)) && (
                             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
-                              <span style={{ fontSize: 10, color: '#0369a1', fontWeight: 700, alignSelf: 'center' }}>🧪 Solvents:</span>
-                              {(((gUpdate as any)?.solvents || (g as any).solvents || [])).map((s: string, sIdx: number) => (
-                                <span key={sIdx} style={{ fontSize: 10, background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '1px 6px', borderRadius: 10, fontWeight: 600 }}>
+                              <span style={{ fontSize: 10, color: '#b45309', fontWeight: 700, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                <Sparkles size={11} color="#d97706" /> Stains:
+                              </span>
+                              {(((gUpdate as any)?.stainTypes || (gUpdate as any)?.solvents || (g as any).stainTypes || (g as any).solvents || [])).map((s: string, sIdx: number) => (
+                                <span key={sIdx} style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '1px 6px', borderRadius: 8, fontWeight: 700 }}>
                                   {s}
                                 </span>
                               ))}
@@ -1874,11 +1890,16 @@ export default function OrderDetail() {
         const brand = gUpdate?.brand || g.brand || '';
         const comments = gUpdate?.comments || (g as any).comments || '';
         const quality = Number((gUpdate as any)?.garmentQuality || (g as any).garmentQuality || 5);
-        const solvents: string[] = (gUpdate as any)?.solvents || (g as any).solvents || [];
+        const stains: string[] = (gUpdate as any)?.stainTypes || (gUpdate as any)?.solvents || (g as any).stainTypes || (g as any).solvents || [];
         const isPassed = viewQcModal.isPassed;
         const isRejected = viewQcModal.isRejected;
         const isPending = viewQcModal.isPending;
         const rejection = viewQcModal.rejection;
+
+        const mRaw = (g.garmentCategory || order?.careCategory || 'PREMIUM').toUpperCase();
+        const mCare = mRaw.includes('SIGNATURE') || mRaw === 'GOLD' ? 'SIGNATURE' : mRaw.includes('PRISTINE') || mRaw === 'ORANGE' || mRaw === 'YELLOW' ? 'PRISTINE' : 'PREMIUM';
+        const mLabel = mCare === 'SIGNATURE' ? 'Signature' : mCare === 'PRISTINE' ? 'Pristine' : 'Premium';
+        const mColor = tierColor[mCare];
 
         const photoSlots = [
           { slot: 'front', label: '1. Front Photo', url: photos.front },
@@ -1923,7 +1944,7 @@ export default function OrderDetail() {
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>
-                        QC Inspection Details — {g.category || 'Garment'}
+                        QC Inspection Details — {mLabel}
                       </h3>
                       {isPassed ? (
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -1960,18 +1981,14 @@ export default function OrderDetail() {
               {/* Scrollable Body */}
               <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {/* Meta details bar */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px' }}>
                   <div>
-                    <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase', fontWeight: 600 }}>Tier</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: tierColor[g.garmentCategory || 'GOLD'] || '#d97706' }}>{g.garmentCategory || 'GOLD'}</div>
+                    <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase', fontWeight: 600 }}>Care Category</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: mColor }}>{mLabel}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase', fontWeight: 600 }}>Service</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{g.serviceType || 'Dry Clean'}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase', fontWeight: 600 }}>Care Category</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{order?.careCategory || 'Normal'}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase', fontWeight: 600 }}>Brand</div>
@@ -1997,12 +2014,12 @@ export default function OrderDetail() {
 
                   <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
-                      <Droplets size={15} color="#0284c7" /> Solvents Used
+                      <Sparkles size={15} color="#d97706" /> Stain Types Identified
                     </div>
-                    {solvents.length > 0 ? (
+                    {stains.length > 0 ? (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                        {solvents.map((s: string, sIdx: number) => (
-                          <span key={sIdx} style={{ fontSize: 11, background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>
+                        {stains.map((s: string, sIdx: number) => (
+                          <span key={sIdx} style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '2px 8px', borderRadius: 8, fontWeight: 700 }}>
                             {s}
                           </span>
                         ))}
@@ -2484,15 +2501,17 @@ export default function OrderDetail() {
                     <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
                       <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600 }}>#</th>
                       <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600 }}>Item</th>
-                      <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600 }}>Tier</th>
+                      <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600 }}>Care Category</th>
                       <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600 }}>Service</th>
                       <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600 }}>QR Code</th>
                     </tr>
                   </thead>
                   <tbody>
                     {viewModal.garments.map((g, i) => {
-                      const tier = g.garmentCategory || 'GOLD';
-                      const color = tierColor[tier] || '#6b7280';
+                      const subCareRaw = (g.garmentCategory || order?.careCategory || 'PREMIUM').toUpperCase();
+                      const subCare = subCareRaw.includes('SIGNATURE') || subCareRaw === 'GOLD' ? 'SIGNATURE' : subCareRaw.includes('PRISTINE') || subCareRaw === 'ORANGE' || subCareRaw === 'YELLOW' ? 'PRISTINE' : 'PREMIUM';
+                      const subCareLabel = subCare === 'SIGNATURE' ? 'Signature' : subCare === 'PRISTINE' ? 'Pristine' : 'Premium';
+                      const color = tierColor[subCare] || '#2563eb';
                       return (
                         <tr key={g.garmentId || i} style={{ borderBottom: i < viewModal.garments.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
                           <td style={{ padding: '10px 10px', color: '#9ca3af', fontSize: 12 }}>{i + 1}</td>
@@ -2510,7 +2529,7 @@ export default function OrderDetail() {
                               ) : null}
                             </div>
                           </td>
-                          <td style={{ padding: '10px 10px', color, fontWeight: 600 }}>{tier}</td>
+                          <td style={{ padding: '10px 10px', color, fontWeight: 600 }}>{subCareLabel}</td>
                           <td style={{ padding: '10px 10px', color: '#6b7280' }}>{g.serviceType || '—'}</td>
                           <td style={{ padding: '10px 10px', color: '#9ca3af', fontFamily: 'monospace', fontSize: 12 }}>{g.qrCode || '—'}</td>
                         </tr>
