@@ -43,6 +43,16 @@ export interface GarmentInfo {
  };
 }
 
+export interface HubInfo {
+ name: string;
+ code?: string;
+ location?: string;
+ latitude?: number | string;
+ longitude?: number | string;
+ address?: string;
+ phone?: string;
+}
+
 export interface ServiceInfo {
  code: string;
  name: string;
@@ -55,6 +65,14 @@ export interface Order {
  orderNumber?: string;
  customer: CustomerInfo;
  careCategory?: string;
+ hub?: HubInfo;
+ hubName?: string;
+ hubCode?: string;
+ hubLocation?: string;
+ hubLatitude?: number | string;
+ hubLongitude?: number | string;
+ hubAddress?: string;
+ hubPhone?: string;
  garments: GarmentInfo[];
  services: ServiceInfo[];
  status: string;

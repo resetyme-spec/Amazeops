@@ -1082,12 +1082,16 @@ export default function OrdersPage() {
              )}
             </div>
 
-            {/* Customer Subscript */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+            {/* Customer Subscript & Hub */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
              <span style={{ fontSize: 12, color: '#475569', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {customer.name || '—'}
              </span>
-
+             {(order.hub?.name || (order as any).hubName || order.hub?.code || (order as any).hubCode) && (
+              <span style={{ fontSize: 10, color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '1px 5px', borderRadius: 4, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+               📍 {order.hub?.code || (order as any).hubCode || order.hub?.name || (order as any).hubName}
+              </span>
+             )}
             </div>
            </div>
 

@@ -77,14 +77,32 @@ app.get('/api/orders', checkApiKey, async (req, res) => {
   try {
    const snapshot = await db.collection('orders').get();
    const firestoreOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-   if (firestoreOrders.length > 0) {
-    return res.json({ orders: firestoreOrders });
-   }
+   return res.json({ orders: firestoreOrders });
   } catch (err) {
    console.warn('[Dummy App] Error fetching orders from Firestore:', err.message);
   }
  }
  res.json({ orders });
+});
+
+// API: Delete all orders
+app.delete('/api/orders', checkApiKey, async (req, res) => {
+ orders = [];
+ if (db) {
+  try {
+   const [orderSnap, subSnap] = await Promise.all([
+    db.collection('orders').get(),
+    db.collection('subOrders').get(),
+   ]);
+   const batch = db.batch();
+   orderSnap.docs.forEach(d => batch.delete(d.ref));
+   subSnap.docs.forEach(d => batch.delete(d.ref));
+   await batch.commit();
+  } catch (err) {
+   console.warn('[Dummy App] Error deleting orders/subOrders:', err.message);
+  }
+ }
+ res.json({ success: true, message: 'All orders and sub-orders cleared' });
 });
 
 // API: Get one order
@@ -122,6 +140,24 @@ app.post('/api/orders', checkApiKey, async (req, res) => {
   city: data.city || data.customer_city || data.customerCity || (data.customer && (data.customer.city || data.customer.customerCity)) || '',
   pincode: data.pincode || data.pin_code || data.pinCode || data.postal_code || (data.customer && (data.customer.pincode || data.customer.pin_code || data.customer.postal_code)) || '',
   careCategory: data.care_category || data.careCategory || 'Normal',
+  hub: (() => {
+   const h = data.hub || {};
+   const name = h.name || data.hub_name || data.hubName || 'Amaze Main Hub';
+   const code = h.code || data.hub_code || data.hubCode || 'HUB-CHN-01';
+   const location = h.location || data.hub_location || data.hubLocation || 'Anna Nagar, Chennai';
+   const latitude = h.latitude || h.lat || data.hub_latitude || data.hubLatitude || data.hub_lat || data.hubLat || 13.0827;
+   const longitude = h.longitude || h.lng || h.log || data.hub_longitude || data.hubLongitude || data.hub_lng || data.hubLng || data.hub_log || data.hubLog || 80.2707;
+   const address = h.address || data.hub_address || data.hubAddress || data.address || 'No. 42, 2nd Avenue, Anna Nagar West, Chennai - 600040';
+   const phone = h.phone || data.hub_phone || data.hubPhone || data.phone || '+91 98400 12345';
+   return { name, code, location, latitude, longitude, address, phone };
+  })(),
+  hubName: data.hub?.name || data.hub_name || data.hubName || 'Amaze Main Hub',
+  hubCode: data.hub?.code || data.hub_code || data.hubCode || 'HUB-CHN-01',
+  hubLocation: data.hub?.location || data.hub_location || data.hubLocation || 'Anna Nagar, Chennai',
+  hubLatitude: data.hub?.latitude || data.hub?.lat || data.hub_latitude || data.hubLatitude || data.hub_lat || data.hubLat || 13.0827,
+  hubLongitude: data.hub?.longitude || data.hub?.lng || data.hub?.log || data.hub_longitude || data.hubLongitude || data.hub_lng || data.hubLng || data.hub_log || data.hubLog || 80.2707,
+  hubAddress: data.hub?.address || data.hub_address || data.hubAddress || data.address || 'No. 42, 2nd Avenue, Anna Nagar West, Chennai - 600040',
+  hubPhone: data.hub?.phone || data.hub_phone || data.hubPhone || data.phone || '+91 98400 12345',
   garments: (data.garments || []).map((g, i) => ({
    garmentId: g.garment_id_code || g.garmentId || `GAR-${orderId}-${i + 1}`,
    qrCode: g.qr_code || g.qrCode || `QR-${orderId}-${i + 1}`,
@@ -797,35 +833,9 @@ app.patch('/api/orders/:id/sub-orders/:subId', checkApiKey, (req, res) => {
 });
 
 
-// Seed demo orders if none exist (after roles so partner references are stable)
-if (orders.length === 0) {
- const sampleOrders = [
-  { customerName: 'M/s Kiran Textiles', customerPhone: '+91 98765 43210', customerCategory: 'RETAIL', status: 'ASSIGNED' },
-  { customerName: 'Ess Ess Furnishings', customerPhone: '+91 98765 43211', customerCategory: 'VIP', status: 'RECEIVED' },
-  { customerName: 'M/s Tulip Knits', customerPhone: '+91 98765 43212', customerCategory: 'WHOLESALE', status: 'IN_PROCESS' },
-  { customerName: 'M/s Mafatlal Fab', customerPhone: '+91 98765 43213', customerCategory: 'RETAIL', status: 'ASSIGNED' },
-  { customerName: 'Shri Ankit Fabs', customerPhone: '+91 98765 43214', customerCategory: 'RETAIL', status: 'RECEIVED' },
- ];
- sampleOrders.forEach(function(od) {
-  const orderId = 'ORD-' + String(nextId).padStart(3, '0');
-  nextId++;
-  const garments = [
-   { garmentId: 'GAR-' + orderId + '-1', qrCode: 'QR-' + orderId + '-1', category: 'Shirt', garmentCategory: 'GOLD', serviceType: 'Wash & Iron', isCritical: true, criticalMarkedBy: 'ananthlingam', criticalMarkedAt: new Date(Date.now() - 86400000).toISOString(), criticalComments: 'Stain on front panel - requires special attention', criticalPhotos: { urls: ['https://via.placeholder.com/150?text=Critical+1', 'https://via.placeholder.com/150?text=Critical+2'] } },
-   { garmentId: 'GAR-' + orderId + '-2', qrCode: 'QR-' + orderId + '-2', category: 'Pant', garmentCategory: 'GOLD', serviceType: 'Dry Clean' },
-   { garmentId: 'GAR-' + orderId + '-3', qrCode: 'QR-' + orderId + '-3', category: 'Saree', garmentCategory: 'GOLD', serviceType: 'Wash & Iron', isCritical: true, criticalMarkedBy: 'ananthlingam', criticalMarkedAt: new Date(Date.now() - 43200000).toISOString(), criticalComments: 'Delicate fabric - handle with care', criticalPhotos: { urls: ['https://via.placeholder.com/150?text=Critical+3'] } },
-  ];
-  orders.push({
-   id: orderId,
-   orderId: orderId,
-   customer: { name: od.customerName, phone: od.customerPhone, category: od.customerCategory },
-   careCategory: od.customerCategory === 'VIP' ? 'Signature Care' : 'Normal',
-   garments: garments,
-   services: [{ code: 'W&I', name: 'Wash & Iron' }, { code: 'DC', name: 'Dry Clean' }],
-   status: od.status,
-   createdAt: new Date(Date.now() - Math.floor(Math.random() * 7 * 86400000)).toISOString(),
-  });
- });
-}
+// Demo orders disabled - orders start completely empty
+// (Create orders via the app or API as needed)
+
 
 app.listen(PORT, () => {
  console.log(`Dummy Order App running at http://localhost:${PORT}`);

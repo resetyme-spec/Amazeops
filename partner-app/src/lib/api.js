@@ -205,6 +205,14 @@ export async function fetchOrdersByPartner(partnerId) {
     updatedAt: sub.updatedAt,
     customer: parent.customer || null,
     careCategory: parent.careCategory || '',
+    hub: parent.hub || sub.hub || null,
+    hubName: parent.hubName || sub.hubName || parent.hub?.name || sub.hub?.name || '',
+    hubCode: parent.hubCode || sub.hubCode || parent.hub?.code || sub.hub?.code || '',
+    hubLocation: parent.hubLocation || sub.hubLocation || parent.hub?.location || sub.hub?.location || '',
+    hubLatitude: parent.hubLatitude ?? sub.hubLatitude ?? parent.hub?.latitude ?? sub.hub?.latitude ?? null,
+    hubLongitude: parent.hubLongitude ?? sub.hubLongitude ?? parent.hub?.longitude ?? sub.hub?.longitude ?? null,
+    hubAddress: parent.hubAddress || sub.hubAddress || parent.hub?.address || sub.hub?.address || '',
+    hubPhone: parent.hubPhone || sub.hubPhone || parent.hub?.phone || sub.hub?.phone || '',
    };
   });
  } catch (e) {
@@ -241,7 +249,17 @@ async function mergeWithParent(sub) {
    const garments = sub.garmentIds?.length > 0
     ? parentGarments.filter(g => sub.garmentIds.includes(g.garmentId || g.qrCode || g.id))
     : parentGarments;
-   result = { ...result, garments, customer: parent.customer || sub.customer, careCategory: parent.careCategory || sub.careCategory, parentStatus: parent.status };
+   const extractHub = (p, s) => ({
+    hub: p?.hub || s?.hub || null,
+    hubName: p?.hubName || s?.hubName || p?.hub?.name || s?.hub?.name || '',
+    hubCode: p?.hubCode || s?.hubCode || p?.hub?.code || s?.hub?.code || '',
+    hubLocation: p?.hubLocation || s?.hubLocation || p?.hub?.location || s?.hub?.location || '',
+    hubLatitude: p?.hubLatitude ?? s?.hubLatitude ?? p?.hub?.latitude ?? s?.hub?.latitude ?? null,
+    hubLongitude: p?.hubLongitude ?? s?.hubLongitude ?? p?.hub?.longitude ?? s?.hub?.longitude ?? null,
+    hubAddress: p?.hubAddress || s?.hubAddress || p?.hub?.address || s?.hub?.address || '',
+    hubPhone: p?.hubPhone || s?.hubPhone || p?.hub?.phone || s?.hub?.phone || '',
+   });
+   result = { ...result, garments, customer: parent.customer || sub.customer, careCategory: parent.careCategory || sub.careCategory, parentStatus: parent.status, ...extractHub(parent, sub) };
   } else {
    // Fallback: fetch parent order from API
    try {
@@ -253,7 +271,17 @@ async function mergeWithParent(sub) {
      const garments = sub.garmentIds?.length > 0
       ? parentGarments.filter(g => sub.garmentIds.includes(g.garmentId || g.qrCode || g.id))
       : parentGarments;
-     result = { ...result, garments, customer: parent.customer || sub.customer, careCategory: parent.careCategory || sub.careCategory, parentStatus: parent.status };
+     const extractHub = (p, s) => ({
+    hub: p?.hub || s?.hub || null,
+    hubName: p?.hubName || s?.hubName || p?.hub?.name || s?.hub?.name || '',
+    hubCode: p?.hubCode || s?.hubCode || p?.hub?.code || s?.hub?.code || '',
+    hubLocation: p?.hubLocation || s?.hubLocation || p?.hub?.location || s?.hub?.location || '',
+    hubLatitude: p?.hubLatitude ?? s?.hubLatitude ?? p?.hub?.latitude ?? s?.hub?.latitude ?? null,
+    hubLongitude: p?.hubLongitude ?? s?.hubLongitude ?? p?.hub?.longitude ?? s?.hub?.longitude ?? null,
+    hubAddress: p?.hubAddress || s?.hubAddress || p?.hub?.address || s?.hub?.address || '',
+    hubPhone: p?.hubPhone || s?.hubPhone || p?.hub?.phone || s?.hub?.phone || '',
+   });
+   result = { ...result, garments, customer: parent.customer || sub.customer, careCategory: parent.careCategory || sub.careCategory, parentStatus: parent.status, ...extractHub(parent, sub) };
     }
    } catch (e) { /* skip */ }
   }

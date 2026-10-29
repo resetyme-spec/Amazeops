@@ -89,6 +89,21 @@
      </div>
     </div>
 
+    <h3>Hub Details</h3>
+    <div class="row">
+     <div><label>Hub Name *</label><input id="hubName" value="Amaze Central Hub"></div>
+     <div><label>Hub Code *</label><input id="hubCode" value="HUB-CHN-01"></div>
+    </div>
+    <div class="row">
+     <div><label>Hub Location</label><input id="hubLocation" value="Anna Nagar West, Chennai"></div>
+     <div><label>Hub Phone</label><input id="hubPhone" value="+91 98400 12345"></div>
+    </div>
+    <div class="row">
+     <div><label>Hub Latitude</label><input id="hubLat" value="13.0827"></div>
+     <div><label>Hub Longitude</label><input id="hubLng" value="80.2707"></div>
+    </div>
+    <div><label>Hub Address</label><input id="hubAddress" value="Plot 42, 2nd Avenue, Anna Nagar West, Chennai, Tamil Nadu 600040"></div>
+
     <h3>Garments <button type="button" class="btn-add" onclick="addGarment()">+ Add Garment</button></h3>
     <div id="garmentsList"></div>
 
@@ -262,6 +277,22 @@
     customerCategory: document.getElementById('customerCategory').value,
     careCategory: document.getElementById('careCategory').value,
     status: document.getElementById('status').value,
+    hub: {
+     name: document.getElementById('hubName').value,
+     code: document.getElementById('hubCode').value,
+     location: document.getElementById('hubLocation').value,
+     phone: document.getElementById('hubPhone').value,
+     latitude: parseFloat(document.getElementById('hubLat').value) || 13.0827,
+     longitude: parseFloat(document.getElementById('hubLng').value) || 80.2707,
+     address: document.getElementById('hubAddress').value,
+    },
+    hubName: document.getElementById('hubName').value,
+    hubCode: document.getElementById('hubCode').value,
+    hubLocation: document.getElementById('hubLocation').value,
+    hubPhone: document.getElementById('hubPhone').value,
+    hubLatitude: parseFloat(document.getElementById('hubLat').value) || 13.0827,
+    hubLongitude: parseFloat(document.getElementById('hubLng').value) || 80.2707,
+    hubAddress: document.getElementById('hubAddress').value,
     garments,
     services: allServices.map(s => ({ code: s.code || s.name, name: s.name })),
    };

@@ -2,7 +2,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Settings, RefreshCw, AlertTriangle, CheckCircle2,
   XCircle, Image as ImageIcon, Camera, Upload, X, MessageSquare, Eye, Tag, Truck,
-  Star, Droplets, Check, Clock, Sparkles
+  Star, Droplets, Check, Clock, Sparkles, MapPin, Building2, Phone, Navigation
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { fetchOrderById } from '../lib/api';
@@ -1233,6 +1233,122 @@ export default function OrderDetail() {
           <div style={{ fontSize: 24, fontWeight: 700, color: rejectedCount > 0 ? '#dc2626' : '#64748b' }}>{rejectedCount}</div>
         </div>
       </div>
+
+      {/* Hub & Facility Information Card */}
+      {(() => {
+        const hub = order.hub || {
+          name: (order as any).hubName || '',
+          code: (order as any).hubCode || '',
+          location: (order as any).hubLocation || '',
+          latitude: (order as any).hubLatitude || (order as any).hubLat || '',
+          longitude: (order as any).hubLongitude || (order as any).hubLng || (order as any).hubLog || '',
+          address: (order as any).hubAddress || '',
+          phone: (order as any).hubPhone || '',
+        };
+        const hasHub = Boolean(hub.name || hub.code || hub.location || hub.address);
+        if (!hasHub) return null;
+
+        const mapsUrl = (hub.latitude && hub.longitude)
+          ? `https://www.google.com/maps?q=${hub.latitude},${hub.longitude}`
+          : hub.address ? `https://www.google.com/maps?q=${encodeURIComponent(hub.address)}` : null;
+
+        return (
+          <div style={{
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 12,
+            padding: '16px 20px',
+            marginBottom: 24,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Building2 size={18} color="#16a34a" />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Originating Hub & Logistics Facility
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 1, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{hub.name || 'Main Operational Hub'}</span>
+                    {hub.code && (
+                      <span style={{ fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: 4, fontFamily: 'monospace' }}>
+                        {hub.code}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {mapsUrl && (
+                <a
+                  href={mapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#2563eb',
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    textDecoration: 'none'
+                  }}
+                >
+                  <Navigation size={13} /> View on Google Maps
+                </a>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
+              {hub.location && (
+                <div>
+                  <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Hub Location</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <MapPin size={13} color="#64748b" /> {hub.location}
+                  </div>
+                </div>
+              )}
+
+              {hub.address && (
+                <div style={{ gridColumn: 'span 2' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Address</div>
+                  <div style={{ fontSize: 12, color: '#334155', marginTop: 2, lineHeight: 1.4 }}>
+                    {hub.address}
+                  </div>
+                </div>
+              )}
+
+              {hub.phone && (
+                <div>
+                  <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Contact Phone</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Phone size={13} color="#64748b" />
+                    <a href={`tel:${hub.phone}`} style={{ color: '#0f172a', textDecoration: 'none' }}>{hub.phone}</a>
+                  </div>
+                </div>
+              )}
+
+              {(hub.latitude || hub.longitude) && (
+                <div>
+                  <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Coordinates (Lat, Long)</div>
+                  <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#475569', marginTop: 2 }}>
+                    📍 {hub.latitude || '—'}, {hub.longitude || '—'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Sub-Orders & Lifecycle Progress */}
       <div style={{ marginBottom: 32 }}>

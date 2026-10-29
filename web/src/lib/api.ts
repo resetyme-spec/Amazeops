@@ -67,6 +67,26 @@ function normalizeOrder(raw: any): any {
   raw._dbgLogged = true;
  }
 
+ // Hub details extraction
+ const rawHub = raw.hub || {};
+ const hubName = rawHub.name || raw.hubName || raw.hub_name || '';
+ const hubCode = rawHub.code || raw.hubCode || raw.hub_code || '';
+ const hubLocation = rawHub.location || raw.hubLocation || raw.hub_location || '';
+ const hubLatitude = rawHub.latitude || rawHub.lat || raw.hubLatitude || raw.hub_latitude || raw.hubLat || raw.hub_lat || '';
+ const hubLongitude = rawHub.longitude || rawHub.lng || rawHub.log || raw.hubLongitude || raw.hub_longitude || raw.hubLng || raw.hub_lng || raw.hubLog || raw.hub_log || '';
+ const hubAddress = rawHub.address || raw.hubAddress || raw.hub_address || '';
+ const hubPhone = rawHub.phone || raw.hubPhone || raw.hub_phone || '';
+
+ const hub = (hubName || hubCode || hubLocation || hubAddress || hubLatitude || hubLongitude) ? {
+  name: hubName || 'Amaze Hub',
+  code: hubCode,
+  location: hubLocation,
+  latitude: hubLatitude,
+  longitude: hubLongitude,
+  address: hubAddress,
+  phone: hubPhone,
+ } : undefined;
+
  return {
   id: String(raw.order_no || raw.orderNumber || raw.order_number || raw.orderId || raw.order_code || raw.id || raw._id || `ORD-${Date.now()}`),
   orderId: String(raw.order_no || raw.orderNumber || raw.order_number || raw.orderId || raw.order_code || raw.id || raw._id || `ORD-${Date.now()}`),
@@ -74,6 +94,14 @@ function normalizeOrder(raw: any): any {
   status: String(raw.status || raw.orderStatus || raw.state || 'RECEIVED'),
   city: customerCity,
   pincode: customerPincode,
+  hub,
+  hubName,
+  hubCode,
+  hubLocation,
+  hubLatitude,
+  hubLongitude,
+  hubAddress,
+  hubPhone,
   customer: {
    name: customerName,
    category: customerCategory,
