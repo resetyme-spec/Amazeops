@@ -29,12 +29,15 @@ export function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: nu
  * Safely parse coordinates from a partner object (supports nested geoLocation, flat latitude/longitude, or lat/lng/logi).
  */
 export function getPartnerCoordinates(p: Partner): { lat: number; lng: number } | null {
-  const lat = p.geoLocation?.latitude ?? (p as any).latitude ?? (p as any).lat;
-  const lng = p.geoLocation?.longitude ?? (p as any).longitude ?? (p as any).lng ?? (p as any).logi;
-  if (lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
-    return { lat: Number(lat), lng: Number(lng) };
+  const rawLat = p.geoLocation?.latitude ?? (p as any).latitude ?? (p as any).lat;
+  const rawLng = p.geoLocation?.longitude ?? (p as any).longitude ?? (p as any).lng ?? (p as any).logi;
+  if (rawLat == null || rawLng == null || rawLat === '' || rawLng === '') return null;
+  const lat = Number(rawLat);
+  const lng = Number(rawLng);
+  if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
+    return null;
   }
-  return null;
+  return { lat, lng };
 }
 
 /**
@@ -42,12 +45,15 @@ export function getPartnerCoordinates(p: Partner): { lat: number; lng: number } 
  */
 export function parseCoordinates(geo: any): { lat: number; lng: number } | null {
   if (!geo) return null;
-  const lat = geo.latitude ?? geo.lat ?? geo.hubLatitude;
-  const lng = geo.longitude ?? geo.lng ?? geo.log ?? geo.hubLongitude;
-  if (lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
-    return { lat: Number(lat), lng: Number(lng) };
+  const rawLat = geo.latitude ?? geo.lat ?? geo.hubLatitude;
+  const rawLng = geo.longitude ?? geo.lng ?? geo.log ?? geo.hubLongitude;
+  if (rawLat == null || rawLng == null || rawLat === '' || rawLng === '') return null;
+  const lat = Number(rawLat);
+  const lng = Number(rawLng);
+  if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
+    return null;
   }
-  return null;
+  return { lat, lng };
 }
 
 /**
