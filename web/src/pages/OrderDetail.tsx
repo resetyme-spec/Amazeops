@@ -9,7 +9,7 @@ import { fetchOrderById } from '../lib/api';
 import { db } from '../lib/firebase';
 import { collection, doc, getDocs, setDoc, updateDoc, getDoc, query, where } from 'firebase/firestore';
 import type { Order, Partner, SubOrder, Garment, QCRecord } from '../types';
-import { assignGarmentsToPartners } from '../lib/assignment';
+import { assignGarmentsToPartners, getDistanceKm, getPartnerCoordinates, parseCoordinates } from '../lib/assignment';
 import { useAuth } from '../contexts/AuthContext';
 
 // Care Categories: Signature (Gold), Pristine (Orange), Premium (Blue)
@@ -1434,11 +1434,25 @@ export default function OrderDetail() {
                           <span style={{ fontSize: 12, color: '#64748b' }}>
                             • {soGarments.length} garment{soGarments.length !== 1 ? 's' : ''}
                           </span>
-                          {(so.distanceKm != null || so.distanceFromHub) && (
-                            <span style={{ fontSize: 11, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 7px', borderRadius: 4, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                              📍 {so.distanceFromHub || `${so.distanceKm} km from Hub`}
-                            </span>
-                          )}
+                          {(() => {
+                            let dist = so.distanceKm;
+                            if (dist == null) {
+                              const pObj = partners.find(p => p.id === so.partnerId || p.partnerCode === so.partnerCode);
+                              const pCoords = pObj ? getPartnerCoordinates(pObj) : null;
+                              const hCoords = parseCoordinates(order.hub || { latitude: order.hubLatitude, longitude: order.hubLongitude });
+                              if (hCoords && pCoords) {
+                                dist = getDistanceKm(hCoords.lat, hCoords.lng, pCoords.lat, pCoords.lng);
+                              }
+                            }
+                            if (dist != null) {
+                              return (
+                                <span style={{ fontSize: 11, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 7px', borderRadius: 4, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  📍 {dist} km from Hub
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       </div>
 
