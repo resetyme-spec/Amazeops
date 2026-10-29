@@ -3,7 +3,7 @@ import { collection, getDocs, query, orderBy, doc, setDoc, deleteDoc, serverTime
 import { db, auth } from '../lib/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { fetchServices, isApiConfigured } from '../lib/api';
-import { Plus, Edit2, Trash2, X, UserPlus } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, UserPlus, MapPin } from 'lucide-react';
 import type { Partner, PartnerCategory, BillingPeriod, Service } from '../types';
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
@@ -97,7 +97,7 @@ const SectionGrid = ({ children }: { children: React.ReactNode }) => (
  function openAdd() { resetForm(); setShowForm(true); setAccountCreated(null); }
  function openEdit(p: Partner) {
  const normalize = (cats: string[]) => (cats || []).map(c => c === 'YELLOW' ? 'ORANGE' : c) as PartnerCategory[];
- setForm({ companyName: p.companyName, contactPerson: p.contactPerson, email: p.email, phone: p.phone, address: p.address, geoLat: p.geoLocation?.latitude?.toString() || '', geoLng: p.geoLocation?.longitude?.toString() || '', gstNumber: p.gstNumber || '', category: normalize(p.categoryArray || (p.category ? [p.category] : [])), billingPeriod: p.billingPeriod, customBillingDays: p.customBillingDays?.toString() || '', active: p.active, services: p.services || [], accountNumber: p.bankAccount?.accountNumber || '', ifscCode: p.bankAccount?.ifscCode || '', accountHolder: p.bankAccount?.accountHolder || '', dailyCapacity: p.dailyCapacity || 0, priority: p.priority ? String(p.priority) : '' });
+ setForm({ companyName: p.companyName, contactPerson: p.contactPerson, email: p.email, phone: p.phone, address: p.address, geoLat: p.geoLocation?.latitude?.toString() || (p as any).latitude?.toString() || (p as any).lat?.toString() || '', geoLng: p.geoLocation?.longitude?.toString() || (p as any).longitude?.toString() || (p as any).lng?.toString() || (p as any).logi?.toString() || '', gstNumber: p.gstNumber || '', category: normalize(p.categoryArray || (p.category ? [p.category] : [])), billingPeriod: p.billingPeriod, customBillingDays: p.customBillingDays?.toString() || '', active: p.active, services: p.services || [], accountNumber: p.bankAccount?.accountNumber || '', ifscCode: p.bankAccount?.ifscCode || '', accountHolder: p.bankAccount?.accountHolder || '', dailyCapacity: p.dailyCapacity || 0, priority: p.priority ? String(p.priority) : '' });
  setEditingId(p.id); setShowForm(true);
  }
  function toggleCategory(cat: PartnerCategory) {
@@ -113,7 +113,7 @@ const SectionGrid = ({ children }: { children: React.ReactNode }) => (
  }
  try {
  const partnerCode = editingId ? undefined : generatePartnerCode(form.category[0] || 'GOLD', partners);
- const raw: any = { companyName: form.companyName, partnerCode, category: form.category[0] || 'GOLD', categoryArray: form.category, contactPerson: form.contactPerson, email: form.email, phone: form.phone, address: form.address, geoLocation: (form.geoLat && form.geoLng) ? { latitude: Number(form.geoLat), longitude: Number(form.geoLng) } : undefined, gstNumber: form.gstNumber || undefined, billingPeriod: form.billingPeriod, customBillingDays: form.billingPeriod === 'CUSTOM' && form.customBillingDays ? Number(form.customBillingDays) : undefined, services: form.services, active: form.active, dailyCapacity: form.dailyCapacity || 0, priority: form.priority ? Number(form.priority) : undefined, bankAccount: (form.accountNumber || form.ifscCode || form.accountHolder) ? { accountNumber: form.accountNumber, ifscCode: form.ifscCode, accountHolder: form.accountHolder } : undefined, updatedAt: new Date() };
+ const raw: any = { companyName: form.companyName, partnerCode, category: form.category[0] || 'GOLD', categoryArray: form.category, contactPerson: form.contactPerson, email: form.email, phone: form.phone, address: form.address, geoLocation: (form.geoLat && form.geoLng) ? { latitude: Number(form.geoLat), longitude: Number(form.geoLng) } : undefined, latitude: form.geoLat ? Number(form.geoLat) : undefined, longitude: form.geoLng ? Number(form.geoLng) : undefined, gstNumber: form.gstNumber || undefined, billingPeriod: form.billingPeriod, customBillingDays: form.billingPeriod === 'CUSTOM' && form.customBillingDays ? Number(form.customBillingDays) : undefined, services: form.services, active: form.active, dailyCapacity: form.dailyCapacity || 0, priority: form.priority ? Number(form.priority) : undefined, bankAccount: (form.accountNumber || form.ifscCode || form.accountHolder) ? { accountNumber: form.accountNumber, ifscCode: form.ifscCode, accountHolder: form.accountHolder } : undefined, updatedAt: new Date() };
  const data = cleanUndefined(raw);
  let partnerId: string;
  if (editingId) { await setDoc(doc(db, 'partners', editingId), data, { merge: true }); partnerId = editingId; }
@@ -209,6 +209,16 @@ const SectionGrid = ({ children }: { children: React.ReactNode }) => (
  <td>
  <div style={{ fontSize: 13, fontWeight: 500, color: '#1f2937' }}>{p.contactPerson}</div>
  <div style={{ fontSize: 11, color: '#6b7280', marginTop: -2 }}>{p.phone}</div>
+ {((p.geoLocation?.latitude && p.geoLocation?.longitude) || (p.latitude && p.longitude)) && (
+ <a
+ href={'https://www.google.com/maps?q=' + (p.geoLocation?.latitude || p.latitude) + ',' + (p.geoLocation?.longitude || p.longitude)}
+ target="_blank"
+ rel="noreferrer"
+ style={{ fontSize: 11, color: '#2563eb', display: 'inline-flex', alignItems: 'center', gap: 3, textDecoration: 'none', marginTop: 3 }}
+ >
+ <MapPin size={11} /> {p.geoLocation?.latitude || p.latitude}, {p.geoLocation?.longitude || p.longitude}
+ </a>
+ )}
  </td>
  <td>{p.billingPeriod}{p.customBillingDays ? ' (' + p.customBillingDays + 'd)' : ''}</td>
  <td><strong>{p.dailyCapacity || 0}</strong> /day</td>
@@ -303,6 +313,18 @@ const SectionGrid = ({ children }: { children: React.ReactNode }) => (
  <div>
  <label style={labelStyle}>Address <span style={{ color: '#ef4444' }}>*</span></label>
  <textarea className="form-input" rows={2} required style={inputStyle} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full business address" />
+ </div>
+ <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 14 }}>
+ <div>
+ <label style={labelStyle}>Geo Latitude (Lat)</label>
+ <input className="form-input" type="number" step="any" style={inputStyle} value={form.geoLat} onChange={e => setForm(f => ({ ...f, geoLat: e.target.value }))} placeholder="e.g. 12.9249" />
+ <small style={{ ...smallStyle, display: 'block', marginTop: 4 }}>Partner GPS latitude (e.g. 12.9249)</small>
+ </div>
+ <div>
+ <label style={labelStyle}>Geo Longitude (Long / Logi)</label>
+ <input className="form-input" type="number" step="any" style={inputStyle} value={form.geoLng} onChange={e => setForm(f => ({ ...f, geoLng: e.target.value }))} placeholder="e.g. 80.1472" />
+ <small style={{ ...smallStyle, display: 'block', marginTop: 4 }}>Partner GPS longitude (e.g. 80.1472)</small>
+ </div>
  </div>
  </Section>
 

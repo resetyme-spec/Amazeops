@@ -147,6 +147,8 @@ export interface Partner {
  phone: string;
  address: string;
  geoLocation?: { latitude: number; longitude: number };
+ latitude?: number | string;
+ longitude?: number | string;
  gstNumber?: string;
  panNumber?: string;
  dailyCapacity: number;
