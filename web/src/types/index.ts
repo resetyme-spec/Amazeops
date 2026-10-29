@@ -47,8 +47,8 @@ export interface HubInfo {
  name: string;
  code?: string;
  location?: string;
- latitude?: number | string;
- longitude?: number | string;
+ latitude?: number | string | null;
+ longitude?: number | string | null;
  address?: string;
  phone?: string;
 }
@@ -65,12 +65,12 @@ export interface Order {
  orderNumber?: string;
  customer: CustomerInfo;
  careCategory?: string;
- hub?: HubInfo;
+ hub?: HubInfo | null;
  hubName?: string;
  hubCode?: string;
  hubLocation?: string;
- hubLatitude?: number | string;
- hubLongitude?: number | string;
+ hubLatitude?: number | string | null;
+ hubLongitude?: number | string | null;
  hubAddress?: string;
  hubPhone?: string;
  garments: GarmentInfo[];

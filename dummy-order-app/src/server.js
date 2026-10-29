@@ -123,8 +123,8 @@ app.get('/api/orders/:id', checkApiKey, async (req, res) => {
 // API: Create order
 app.post('/api/orders', checkApiKey, async (req, res) => {
  const data = req.body;
- const orderId = data.order_no || data.orderNo || `ORD-${String(nextId).padStart(3, '0')}`;
- if (!data.order_no && !data.orderNo) nextId++;
+ const orderId = data.order_id || data.orderId || data.order_no || data.orderNo || `ORD-${String(nextId).padStart(3, '0')}`;
+ if (!data.order_id && !data.orderId && !data.order_no && !data.orderNo) nextId++;
 
  const order = {
   id: orderId,

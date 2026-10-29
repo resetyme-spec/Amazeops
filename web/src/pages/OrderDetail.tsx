@@ -606,8 +606,17 @@ export default function OrderDetail() {
         const startNum = orderSubs.length + 1;
         let subNum = startNum;
 
-        // Also sync parent order to Firestore so partner app can access garment details
+        // Also sync parent order to Firestore so partner app can access garment and hub details
         const orderRef = doc(db, 'orders', orderIdStr);
+        const hubPayload = order.hub || {
+          name: order.hubName || '',
+          code: order.hubCode || '',
+          location: order.hubLocation || '',
+          latitude: order.hubLatitude ?? null,
+          longitude: order.hubLongitude ?? null,
+          address: order.hubAddress || '',
+          phone: order.hubPhone || '',
+        };
         await setDoc(orderRef, {
           id: orderIdStr,
           orderId: order.orderId || orderIdStr,
@@ -616,6 +625,14 @@ export default function OrderDetail() {
           garments: order.garments || [],
           services: order.services || [],
           createdAt: order.createdAt || now,
+          hub: hubPayload,
+          hubName: hubPayload.name || order.hubName || '',
+          hubCode: hubPayload.code || order.hubCode || '',
+          hubLocation: hubPayload.location || order.hubLocation || '',
+          hubLatitude: hubPayload.latitude ?? order.hubLatitude ?? null,
+          hubLongitude: hubPayload.longitude ?? order.hubLongitude ?? null,
+          hubAddress: hubPayload.address || order.hubAddress || '',
+          hubPhone: hubPayload.phone || order.hubPhone || '',
         }, { merge: true });
 
         for (const [, group] of partnerMap) {

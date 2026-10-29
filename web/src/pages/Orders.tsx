@@ -587,6 +587,40 @@ export default function OrdersPage() {
     subNum++;
    }
    existingByOrder.set(orderId, existing);
+
+   // Sync main order to Firestore 'orders' collection with its hub details (NOT in sub-orders)
+   try {
+    const hubData = order.hub || {
+     name: order.hubName || '',
+     code: order.hubCode || '',
+     location: order.hubLocation || '',
+     latitude: order.hubLatitude ?? null,
+     longitude: order.hubLongitude ?? null,
+     address: order.hubAddress || '',
+     phone: order.hubPhone || '',
+    };
+    await setDoc(doc(db, 'orders', orderId), {
+     id: orderId,
+     orderId,
+     orderNumber: order.orderNumber || orderId,
+     customer: order.customer || null,
+     careCategory: order.careCategory || 'Normal',
+     garments: order.garments || [],
+     services: order.services || [],
+     status: order.status || 'ASSIGNED',
+     createdAt: order.createdAt || now,
+     hub: hubData,
+     hubName: hubData.name || order.hubName || '',
+     hubCode: hubData.code || order.hubCode || '',
+     hubLocation: hubData.location || order.hubLocation || '',
+     hubLatitude: hubData.latitude ?? order.hubLatitude ?? null,
+     hubLongitude: hubData.longitude ?? order.hubLongitude ?? null,
+     hubAddress: hubData.address || order.hubAddress || '',
+     hubPhone: hubData.phone || order.hubPhone || '',
+    }, { merge: true });
+   } catch (e) {
+    console.error('Failed to sync main order to Firestore:', e);
+   }
   }
   return made ? new Map(existingByOrder) : existingByOrder;
  }
@@ -621,9 +655,18 @@ export default function OrdersPage() {
      const docId = String(o.orderNumber || o.orderId || o.id);
      const existing = orderMap.get(docId);
      if (existing) {
+      const hubData = existing.hub || o.hub;
       orderMap.set(docId, {
        ...o,
        ...existing,
+       hub: hubData,
+       hubName: hubData?.name || existing.hubName || o.hubName || '',
+       hubCode: hubData?.code || existing.hubCode || o.hubCode || '',
+       hubLocation: hubData?.location || existing.hubLocation || o.hubLocation || '',
+       hubLatitude: hubData?.latitude ?? existing.hubLatitude ?? o.hubLatitude ?? null,
+       hubLongitude: hubData?.longitude ?? existing.hubLongitude ?? o.hubLongitude ?? null,
+       hubAddress: hubData?.address || existing.hubAddress || o.hubAddress || '',
+       hubPhone: hubData?.phone || existing.hubPhone || o.hubPhone || '',
        status: existing.status || o.status,
        qcStatus: existing.qcStatus || o.qcStatus,
        deliveryStatus: existing.deliveryStatus || (existing as any).deliveryStatus || o.deliveryStatus,
