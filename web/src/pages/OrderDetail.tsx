@@ -592,7 +592,8 @@ export default function OrderDetail() {
         if (!unassigned.length) return;
 
         const orderCode = order.orderNumber || order.orderId || orderId || 'ORD';
-        const assignments = assignGarmentsToPartners(orderCode, unassigned, activePartners);
+        const hubGeo = order.hub || { latitude: order.hubLatitude, longitude: order.hubLongitude };
+        const assignments = assignGarmentsToPartners(orderCode, unassigned, activePartners, hubGeo);
 
         // Merge by partnerId — one sub-order per partner, not per category
         const partnerMap = new Map<string, typeof assignments>();
@@ -649,6 +650,8 @@ export default function OrderDetail() {
             partnerName: first.partnerName,
             garmentCategory: group.map(g => g.garmentCategory).join(','),
             garmentIds: allGarmentIds,
+            distanceKm: first.distanceKm,
+            distanceFromHub: first.distanceKm != null ? `${first.distanceKm} km` : undefined,
             status: 'PENDING',
             createdAt: now,
             updatedAt: now,
@@ -676,7 +679,8 @@ export default function OrderDetail() {
       const garments = (order.garments || []).filter(g => so.garmentIds.includes(g.garmentId));
       const orderCode = order.id || order.orderId || orderId || 'ORD';
       const otherPartners = partners.filter(p => p.id !== so.partnerId);
-      const assignments = assignGarmentsToPartners(orderCode, garments, otherPartners);
+      const hubGeo = order.hub || { latitude: order.hubLatitude, longitude: order.hubLongitude };
+      const assignments = assignGarmentsToPartners(orderCode, garments, otherPartners, hubGeo);
       if (!assignments.length) { alert('No other eligible partner found.'); return; }
 
       const a = assignments[0];
@@ -1430,6 +1434,11 @@ export default function OrderDetail() {
                           <span style={{ fontSize: 12, color: '#64748b' }}>
                             • {soGarments.length} garment{soGarments.length !== 1 ? 's' : ''}
                           </span>
+                          {(so.distanceKm != null || so.distanceFromHub) && (
+                            <span style={{ fontSize: 11, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 7px', borderRadius: 4, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              📍 {so.distanceFromHub || `${so.distanceKm} km from Hub`}
+                            </span>
+                          )}
                         </div>
                       </div>
 

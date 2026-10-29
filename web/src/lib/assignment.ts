@@ -7,27 +7,76 @@ export interface AssignmentResult {
   garmentCategory: string;
   garmentIds: string[];
   subOrderCode: string;
+  distanceKm?: number;
+}
+
+/**
+ * Calculate geographical distance in kilometers between two GPS coordinates using the Haversine formula.
+ */
+export function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Radius of Earth in kilometers
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Number((R * c).toFixed(2));
+}
+
+/**
+ * Safely parse coordinates from a partner object (supports nested geoLocation, flat latitude/longitude, or lat/lng/logi).
+ */
+export function getPartnerCoordinates(p: Partner): { lat: number; lng: number } | null {
+  const lat = p.geoLocation?.latitude ?? (p as any).latitude ?? (p as any).lat;
+  const lng = p.geoLocation?.longitude ?? (p as any).longitude ?? (p as any).lng ?? (p as any).logi;
+  if (lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
+    return { lat: Number(lat), lng: Number(lng) };
+  }
+  return null;
+}
+
+/**
+ * Safely parse coordinates from a Hub object or flat coordinates.
+ */
+export function parseCoordinates(geo: any): { lat: number; lng: number } | null {
+  if (!geo) return null;
+  const lat = geo.latitude ?? geo.lat ?? geo.hubLatitude;
+  const lng = geo.longitude ?? geo.lng ?? geo.log ?? geo.hubLongitude;
+  if (lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
+    return { lat: Number(lat), lng: Number(lng) };
+  }
+  return null;
 }
 
 /**
  * Auto-assign garments from an order to the best-fit partners.
  *
  * Rules:
- * 1. Group garments by garmentCategory (GOLD / ORANGE / BLUE)
- * 2. For each group, pick the partner who supports that category
- * 3. If multiple partners support it, prefer the one with lower priority number (1 > 2 > 3)
- * 4. If a partner supports multiple categories present in the order, assign all to that partner
+ * 1. Filter active partners who support the garment category (Signature/Gold, Pristine/Orange, Premium/Blue)
+ * 2. Primary Rule: Proximity — Pick the nearest partner to the Order's Hub location (lowest distance in km)
+ * 3. Secondary Rule: Priority level (1 > 2 > 3) when distances are equal or coordinates are unavailable
+ * 4. Tertiary Rule: If a partner supports multiple categories present in the order, assign all to that partner
  *    (fewer handoffs = more capable partner wins)
- * 5. Each group gets its own sub-order with format: {orderCode}-{partnerCode}-{subNumber}
+ * 5. Format subOrderCode: {orderCode}-{partnerCode}-{subNumber}
  */
 export function assignGarmentsToPartners(
   orderCode: string,
   garments: GarmentInfo[],
-  partners: Partner[]
+  partners: Partner[],
+  hubGeo?: any
 ): AssignmentResult[] {
   if (!garments.length || !partners.length) return [];
 
-  console.log('[assign] partners=', partners.map(p => `${p.companyName}[${p.partnerCode}] cats=${JSON.stringify(p.categoryArray || p.category)} active=${p.active} priority=${p.priority}`));
+  const hubCoords = parseCoordinates(hubGeo);
+
+  console.log('[assign] hubCoords=', hubCoords);
+  console.log('[assign] partners=', partners.map(p => {
+    const coords = getPartnerCoordinates(p);
+    const dist = hubCoords && coords ? getDistanceKm(hubCoords.lat, hubCoords.lng, coords.lat, coords.lng) : null;
+    return `${p.companyName}[${p.partnerCode}] cats=${JSON.stringify(p.categoryArray || p.category)} active=${p.active} prio=${p.priority} dist=${dist != null ? dist + 'km' : 'N/A'}`;
+  }));
   console.log('[assign] garments=', garments.map(g => `${g.garmentId} cat=${g.garmentCategory}`));
 
   // Group garments by category
@@ -77,15 +126,29 @@ export function assignGarmentsToPartners(
       continue;
     }
 
-    // Sort by priority (lower number = higher priority), then pick the best
-    // Among same priority, prefer the partner who supports the most garment categories
-    // present in THIS order (fewer handoffs)
+    // Sort eligible partners:
+    // 1. Proximity to Hub (Nearest partner with valid coordinates wins)
+    // 2. Priority level (1 > 2 > 3) when distances are equal (within 100 meters) or missing
+    // 3. Multi-category capability (fewer handoffs)
     const sorted = [...eligible].sort((a, b) => {
+      if (hubCoords) {
+        const coordsA = getPartnerCoordinates(a);
+        const coordsB = getPartnerCoordinates(b);
+        const distA = coordsA ? getDistanceKm(hubCoords.lat, hubCoords.lng, coordsA.lat, coordsA.lng) : 999999;
+        const distB = coordsB ? getDistanceKm(hubCoords.lat, hubCoords.lng, coordsB.lat, coordsB.lng) : 999999;
+
+        // If distance difference is meaningful (> 100 meters), nearest partner wins
+        if (Math.abs(distA - distB) >= 0.1) {
+          return distA - distB;
+        }
+      }
+
+      // Priority Level (lower number = higher priority: 1 > 2 > 3)
       const pa = a.priority || 99;
       const pb = b.priority || 99;
       if (pa !== pb) return pa - pb;
 
-      // Same priority: count how many of this order's categories each partner supports
+      // Multi-category support (count how many categories of this order each partner supports)
       const catsInOrder = [...groups.keys()].map(normalizeCat);
       const aCats = (a.categoryArray || [a.category].filter(Boolean)).map(normalizeCat);
       const bCats = (b.categoryArray || [b.category].filter(Boolean)).map(normalizeCat);
@@ -95,7 +158,10 @@ export function assignGarmentsToPartners(
     });
 
     const best = sorted[0];
-    console.log(`[assign] PICKED for ${cat}: ${best.companyName}[${best.partnerCode}] from`, eligible.map(p => p.companyName));
+    const bestCoords = getPartnerCoordinates(best);
+    const distanceKm = hubCoords && bestCoords ? getDistanceKm(hubCoords.lat, hubCoords.lng, bestCoords.lat, bestCoords.lng) : undefined;
+
+    console.log(`[assign] PICKED for ${cat}: ${best.companyName}[${best.partnerCode}] distance=${distanceKm != null ? distanceKm + 'km' : 'N/A'}`);
     results.push({
       partnerId: best.id,
       partnerCode: best.partnerCode,
@@ -103,6 +169,7 @@ export function assignGarmentsToPartners(
       garmentCategory: cat,
       garmentIds: group.garments.map(g => g.garmentId),
       subOrderCode: `${orderCode}-${best.partnerCode}-${subNum}`,
+      distanceKm,
     });
     subNum++;
   }

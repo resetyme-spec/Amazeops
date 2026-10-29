@@ -186,6 +186,8 @@ export interface SubOrder {
  approvedAt?: string;
  approvedBy?: string;
  notes?: string;
+ distanceKm?: number;
+ distanceFromHub?: string;
  rejectionReason?: string;
  rejectedBy?: string;
  rejectedAt?: string;

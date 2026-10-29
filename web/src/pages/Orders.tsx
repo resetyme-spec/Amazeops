@@ -549,7 +549,8 @@ export default function OrdersPage() {
     continue;
    }
 
-   const assignments = assignGarmentsToPartners(orderId, unassignedGarments, allPartners);
+   const hubGeo = order.hub || { latitude: order.hubLatitude, longitude: order.hubLongitude };
+   const assignments = assignGarmentsToPartners(orderId, unassignedGarments, allPartners, hubGeo);
 
    // Merge by partnerId — one sub-order per partner, not per category
    const partnerMap = new Map<string, typeof assignments>();
@@ -577,6 +578,8 @@ export default function OrdersPage() {
      partnerId: first.partnerId, partnerCode: first.partnerCode, partnerName: first.partnerName,
      garmentCategory: group.map(g => g.garmentCategory).join(','),
      garmentIds: allGarmentIds,
+     distanceKm: first.distanceKm,
+     distanceFromHub: first.distanceKm != null ? `${first.distanceKm} km` : undefined,
      status: 'ASSIGNED', createdAt: now, updatedAt: now,
     };
     try {
@@ -1303,6 +1306,11 @@ export default function OrdersPage() {
                    {primaryCat && (
                     <span style={{ background: bg, color, padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, border: `1px solid ${color}35` }}>
                      {primaryCat}
+                    </span>
+                   )}
+                   {(so.distanceKm != null || so.distanceFromHub) && (
+                    <span style={{ fontSize: 10, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '1px 6px', borderRadius: 4, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                     📍 {so.distanceFromHub || `${so.distanceKm} km`}
                     </span>
                    )}
                    <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>
