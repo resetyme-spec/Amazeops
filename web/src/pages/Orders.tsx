@@ -1308,11 +1308,25 @@ export default function OrdersPage() {
                      {primaryCat}
                     </span>
                    )}
-                   {(so.distanceKm != null || so.distanceFromHub) && (
-                    <span style={{ fontSize: 10, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '1px 6px', borderRadius: 4, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                     📍 {so.distanceFromHub || `${so.distanceKm} km`}
-                    </span>
-                   )}
+                   {(() => {
+                    let dist = so.distanceKm;
+                    if (dist == null) {
+                     const pObj = partnersList.find(p => p.id === so.partnerId || p.partnerCode === so.partnerCode);
+                     const pCoords = pObj ? getPartnerCoordinates(pObj) : null;
+                     const hCoords = parseCoordinates(order.hub || { latitude: order.hubLatitude, longitude: order.hubLongitude });
+                     if (hCoords && pCoords) {
+                      dist = getDistanceKm(hCoords.lat, hCoords.lng, pCoords.lat, pCoords.lng);
+                     }
+                    }
+                    if (dist != null) {
+                     return (
+                      <span style={{ fontSize: 10, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", padding: "1px 6px", borderRadius: 4, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                       📍 {dist} km
+                      </span>
+                     );
+                    }
+                    return null;
+                   })()}
                    <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>
                     • {so.garmentIds.length} garment{so.garmentIds.length !== 1 ? 's' : ''}
                    </span>
