@@ -233,17 +233,32 @@ export default function Dashboard() {
         !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(o.derivedStatus)
       ).length;
 
-      // Critical Cases: sum of critical garments across orders, with fallback to open critical cases
+      // Known order IDs in the current filtered/active list
+      const knownOrderIds = new Set(filtered.flatMap(o => [
+        String(o.id || ''),
+        String(o.orderId || ''),
+        String(o.orderNumber || ''),
+        ...(o.subOrders || []).map((s: any) => String(s.id || s.orderId || s.subOrderCode || ''))
+      ]).filter(Boolean));
+
+      // Critical Cases: sum of critical garments across orders, with fallback to open critical cases for existing orders
       const garmentsCriticalCount = filtered.reduce((acc, o) => acc + (o.criticalCount || 0), 0);
-      const openCasesCount = fsCriticalCases.filter((c: any) => c.status !== 'RESOLVED' && c.status !== 'CLOSED').length;
+      const openCasesCount = fsCriticalCases.filter((c: any) =>
+        knownOrderIds.has(String(c.orderId || '')) && c.status !== 'RESOLVED' && c.status !== 'CLOSED'
+      ).length;
       const criticalCases = Math.max(garmentsCriticalCount, openCasesCount);
+
+      // Filter qcRecords strictly to existing orders in the system
+      const activeQcRecords = fsQcRecords.filter((q: any) =>
+        knownOrderIds.has(String(q.orderId || '')) || knownOrderIds.has(String(q.subOrderId || ''))
+      );
 
       // QC Sent:
       const qcSentOrders = filtered.filter(o =>
         o.derivedStatus === 'QC_PENDING' || o.derivedStatus === 'QC_SENT' || o.qcStatus === 'QC_PENDING' || o.qcStatus === 'QC_SENT' ||
         (o.subOrders || []).some((s: any) => s.status === 'QC_PENDING' || s.status === 'QC_SENT' || s.qcStatus === 'QC_PENDING')
       ).length;
-      const qcSentRecords = fsQcRecords.filter((q: any) => q.status === 'QC_PENDING' || q.status === 'QC_SENT').length;
+      const qcSentRecords = activeQcRecords.filter((q: any) => q.status === 'QC_PENDING' || q.status === 'QC_SENT').length;
       const qcSent = Math.max(qcSentOrders, qcSentRecords);
 
       // QC Approved:
@@ -251,7 +266,7 @@ export default function Dashboard() {
         o.derivedStatus === 'QC_APPROVED' || o.qcStatus === 'QC_APPROVED' ||
         (o.subOrders || []).some((s: any) => s.status === 'QC_APPROVED' || s.qcStatus === 'QC_APPROVED')
       ).length;
-      const qcApprovedRecords = fsQcRecords.filter((q: any) => q.status === 'QC_APPROVED').length;
+      const qcApprovedRecords = activeQcRecords.filter((q: any) => q.status === 'QC_APPROVED').length;
       const qcApproved = Math.max(qcApprovedOrders, qcApprovedRecords);
 
       // Ready for Delivery:

@@ -90,19 +90,21 @@ app.delete('/api/orders', checkApiKey, async (req, res) => {
  orders = [];
  if (db) {
   try {
-   const [orderSnap, subSnap] = await Promise.all([
+   const [orderSnap, subSnap, qcSnap] = await Promise.all([
     db.collection('orders').get(),
     db.collection('subOrders').get(),
+    db.collection('qcRecords').get(),
    ]);
    const batch = db.batch();
    orderSnap.docs.forEach(d => batch.delete(d.ref));
    subSnap.docs.forEach(d => batch.delete(d.ref));
+   qcSnap.docs.forEach(d => batch.delete(d.ref));
    await batch.commit();
   } catch (err) {
-   console.warn('[Dummy App] Error deleting orders/subOrders:', err.message);
+   console.warn('[Dummy App] Error deleting orders/subOrders/qcRecords:', err.message);
   }
  }
- res.json({ success: true, message: 'All orders and sub-orders cleared' });
+ res.json({ success: true, message: 'All orders, sub-orders, and QC records cleared' });
 });
 
 // API: Get one order
