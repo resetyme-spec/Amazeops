@@ -5,7 +5,7 @@ import {
   Star, Droplets, Check, Clock, Sparkles, MapPin, Building2, Phone, Navigation
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
-import { fetchOrderById } from '../lib/api';
+import { fetchOrderById, pushSplitOrdersToApi } from '../lib/api';
 import { db } from '../lib/firebase';
 import { collection, doc, getDocs, setDoc, updateDoc, getDoc, query, where } from 'firebase/firestore';
 import type { Order, Partner, SubOrder, Garment, QCRecord } from '../types';
@@ -663,6 +663,29 @@ export default function OrderDetail() {
         const freshSubs = freshSnap.docs.map(d => ({ id: d.id, ...d.data() } as SubOrder)).filter(so => so.orderId === orderIdStr);
         setSubOrders(freshSubs);
         loadQCRecords(orderIdStr, freshSubs);
+
+        // Push split order details to external Customer App / order system
+        try {
+          const splitOrdersPayload = freshSubs.map(so => {
+            const p = partners.find(x => x.id === so.partnerId || x.partnerCode === so.partnerCode);
+            const coords = p ? getPartnerCoordinates(p) : null;
+            return {
+              subOrderCode: so.subOrderCode,
+              partnerName: so.partnerName,
+              partnerCode: so.partnerCode,
+              partnerId: so.partnerId,
+              status: so.status || 'ASSIGNED',
+              partnerGeoLocation: coords ? { latitude: coords.lat, longitude: coords.lng } : null,
+              garmentIds: so.garmentIds || [],
+              garmentCount: so.garmentIds?.length || 0,
+              careCategory: so.garmentCategory || '',
+              distanceKm: so.distanceKm,
+            };
+          });
+          pushSplitOrdersToApi(order.orderNumber || orderIdStr, splitOrdersPayload).catch(() => {});
+        } catch (e) {
+          console.warn('Failed to push split orders from OrderDetail:', e);
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[OrderDetail] Fatal error:', msg);

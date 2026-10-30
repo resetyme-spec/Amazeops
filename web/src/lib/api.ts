@@ -451,3 +451,35 @@ export async function fetchDashboardData(): Promise<{ stats: DashboardStats; rec
   return data;
  } catch (e) { console.error('fetchDashboardData error:', e); return null; }
 }
+
+// ===== NOTIFY EXTERNAL SYSTEM / API OF SPLIT ORDERS =====
+export async function pushSplitOrdersToApi(mainOrderNumber: string, splitOrders: Array<{
+ subOrderCode: string;
+ partnerName: string;
+ partnerCode?: string;
+ partnerId?: string;
+ status: string;
+ partnerGeoLocation?: { latitude: number; longitude: number } | null;
+ garmentIds?: string[];
+ garmentCount?: number;
+ careCategory?: string;
+ distanceKm?: number;
+}>) {
+ try {
+  return await callApi<{ success: boolean; mainOrderNumber: string; splitCount: number }>(
+   `/api/orders/${encodeURIComponent(mainOrderNumber)}/split`,
+   {
+    method: 'POST',
+    body: JSON.stringify({
+     mainOrderNumber,
+     splitOrders,
+     subOrders: splitOrders,
+     timestamp: new Date().toISOString()
+    }),
+   }
+  );
+ } catch (e) {
+  console.warn('pushSplitOrdersToApi warning (external API unreachable):', e);
+  return null;
+ }
+}

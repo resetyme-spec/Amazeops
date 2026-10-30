@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RefreshCw, Settings, ChevronRight, ChevronDown, RotateCcw, Trash2, AlertTriangle, CheckCircle2, Clock, Check, Truck, XCircle, MessageSquare, Search } from 'lucide-react';
-import { fetchOrders } from '../lib/api';
+import { fetchOrders, pushSplitOrdersToApi } from '../lib/api';
 import { db } from '../lib/firebase';
 import { collection, doc, setDoc, getDocs, getDoc, deleteDoc, query, where, onSnapshot } from 'firebase/firestore';
 import type { Order, Partner, SubOrder, Garment } from '../types';
@@ -623,6 +623,29 @@ export default function OrdersPage() {
     }, { merge: true });
    } catch (e) {
     console.error('Failed to sync main order to Firestore:', e);
+   }
+
+   // Push split order details to external Customer App / order system
+   try {
+    const splitOrdersPayload = existing.map(so => {
+     const p = allPartners.find(x => x.id === so.partnerId || x.partnerCode === so.partnerCode);
+     const coords = p ? getPartnerCoordinates(p) : null;
+     return {
+      subOrderCode: so.subOrderCode,
+      partnerName: so.partnerName,
+      partnerCode: so.partnerCode,
+      partnerId: so.partnerId,
+      status: so.status || "ASSIGNED",
+      partnerGeoLocation: coords ? { latitude: coords.lat, longitude: coords.lng } : null,
+      garmentIds: so.garmentIds || [],
+      garmentCount: so.garmentIds?.length || 0,
+      careCategory: so.garmentCategory || "",
+      distanceKm: so.distanceKm,
+     };
+    });
+    pushSplitOrdersToApi(order.orderNumber || orderId, splitOrdersPayload).catch(() => {});
+   } catch (e) {
+    console.warn("Failed to push split orders:", e);
    }
   }
   return made ? new Map(existingByOrder) : existingByOrder;

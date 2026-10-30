@@ -398,6 +398,93 @@ app.patch('/api/orders/:id/status', checkApiKey, async (req, res) => {
  } catch (e) {}
  res.json({ success: true, id, status });
 });
+
+// Push split order details to external Customer App / order system
+app.post('/api/orders/:id/split', checkApiKey, async (req, res) => {
+ const id = req.params.id;
+ const { mainOrderNumber, subOrders, splitOrders } = req.body;
+ const ordersToPush = splitOrders || subOrders || [];
+ const mainOrderNo = mainOrderNumber || id;
+ const now = new Date().toISOString();
+
+ // Sync split orders to Firestore if available
+ if (db) {
+  try {
+   const batch = db.batch();
+   for (const so of ordersToPush) {
+    const docId = so.id || so.subOrderCode || `${mainOrderNo}-${so.partnerCode || "P"}`;
+    const ref = db.collection('subOrders').doc(docId);
+    batch.set(ref, {
+     id: docId,
+     orderId: mainOrderNo,
+     mainOrderNumber: mainOrderNo,
+     subOrderCode: so.subOrderCode || docId,
+     partnerName: so.partnerName || '',
+     partnerCode: so.partnerCode || '',
+     partnerId: so.partnerId || '',
+     status: so.status || 'ASSIGNED',
+     partnerGeoLocation: so.partnerGeoLocation || so.geoLocation || null,
+     garmentIds: so.garmentIds || [],
+     garmentCount: so.garmentIds?.length || so.garmentCount || 0,
+     careCategory: so.careCategory || so.garmentCategory || '',
+     distanceKm: so.distanceKm ?? null,
+     distanceFromHub: so.distanceFromHub || (so.distanceKm != null ? `${so.distanceKm} km` : ''),
+     updatedAt: now,
+    }, { merge: true });
+   }
+   await batch.commit();
+  } catch (err) {
+   console.warn('[Dummy App] Firestore split sync error:', err.message);
+  }
+ }
+
+ // Also update in-memory order if present
+ const order = orders.find(o => o.id === id || o.orderId === id || o.orderNumber === id);
+ if (order) {
+  order.subOrders = ordersToPush;
+  order.updatedAt = now;
+ }
+
+ // Push notification to external Customer App / order system (same pattern as status update)
+ const custUrl = process.env.CUSTOMER_APP_URL || 'http://localhost:5000';
+ let notifySuccess = false;
+ try {
+  const resp = await fetch(`${custUrl}/api/orders/${encodeURIComponent(mainOrderNo)}/split`, {
+   method: 'POST',
+   headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': 'amaze-fab-super-admin-key-2026'
+   },
+   body: JSON.stringify({
+    mainOrderNumber: mainOrderNo,
+    splitOrders: ordersToPush.map(so => ({
+     subOrderCode: so.subOrderCode,
+     partnerName: so.partnerName,
+     partnerCode: so.partnerCode,
+     status: so.status || 'ASSIGNED',
+     partnerGeoLocation: so.partnerGeoLocation || so.geoLocation || null,
+     garmentIds: so.garmentIds || [],
+     garmentCount: so.garmentIds?.length || so.garmentCount || 0,
+     careCategory: so.careCategory || so.garmentCategory || '',
+     distanceKm: so.distanceKm ?? null,
+    })),
+    timestamp: now
+   })
+  });
+  notifySuccess = resp.ok;
+ } catch (e) {
+  console.log(`[Dummy App] Outbound split notification to ${custUrl} queued/not reached (${e.message})`);
+ }
+
+ res.json({
+  success: true,
+  mainOrderNumber: mainOrderNo,
+  splitCount: ordersToPush.length,
+  customerAppNotified: notifySuccess,
+  subOrders: ordersToPush
+ });
+});
+
 app.get('/api/categories', checkApiKey, (req, res) => res.json({ categories: customerCategories }));
 app.get('/api/invoices', checkApiKey, (req, res) => res.json({ invoices: [] }));
 app.get('/api/critical-cases', checkApiKey, (req, res) => res.json({ cases: [] }));
