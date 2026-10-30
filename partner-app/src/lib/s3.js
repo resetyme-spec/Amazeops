@@ -1,7 +1,7 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const REGION = import.meta.env.VITE_AWS_REGION || 'ap-south-1';
-const BUCKET_NAME = import.meta.env.VITE_AWS_S3_BUCKET || 'qc-bucket-597581086829-ap-south-1-an';
+const BUCKET_NAME = import.meta.env.VITE_AWS_S3_BUCKET || 'amaze-plant';
 
 const s3Client = new S3Client({
   region: REGION,

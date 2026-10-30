@@ -13,7 +13,7 @@
   "lint": "eslint --ext .js,.ts ."
  },
  "engines": {
-  "node": "20"
+  "node": "22"
  },
  "dependencies": {
   "@types/markdown-it": "^14.2.0",
