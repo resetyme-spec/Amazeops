@@ -321,6 +321,34 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
 
    const orderData: any = { id: orderDoc.id, ...orderDoc.data() };
    const curStatus = orderData.status || 'RECEIVED';
+
+   // Enrich with subOrders if not already embedded
+   if (!orderData.subOrders || orderData.subOrders.length === 0) {
+    let subsSnap = await db.collection('subOrders').where('orderId', '==', orderDoc.id).get();
+    if (subsSnap.empty && orderData.orderNumber) {
+     subsSnap = await db.collection('subOrders').where('mainOrderNumber', '==', orderData.orderNumber).get();
+    }
+    if (!subsSnap.empty) {
+     orderData.subOrders = subsSnap.docs.map(d => {
+      const data = d.data();
+      return {
+       subOrderNumber: data.subOrderNumber || data.subOrderCode || d.id,
+       subOrderCode: data.subOrderCode || data.subOrderNumber || d.id,
+       partnerName: data.partnerName || '',
+       partnerCode: data.partnerCode || '',
+       partnerId: data.partnerId || '',
+       status: data.status || 'ASSIGNED',
+       partnerGeoLocation: data.partnerGeoLocation || null,
+       distance: data.distance || (data.distanceKm != null ? `${data.distanceKm} km` : ''),
+       distanceKm: data.distanceKm != null ? Number(data.distanceKm) : null,
+       careCategory: data.careCategory || '',
+       garmentCount: data.garmentCount || (Array.isArray(data.garmentIds) ? data.garmentIds.length : 0),
+       garmentIds: data.garmentIds || [],
+      };
+     });
+    }
+   }
+
    const stages = ['RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'COMPLETED', 'DELIVERED'];
    const curIdx = stages.indexOf(curStatus);
 
@@ -333,10 +361,13 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
 
    res.status(200).json({
     success: true,
-    order: orderData,
     orderId: orderData.order_no || orderData.id,
+    mainOrderNumber: orderData.orderNumber || orderData.id,
     status: curStatus,
-    timeline
+    totalSubOrders: (orderData.subOrders || []).length,
+    subOrders: orderData.subOrders || [],
+    timeline,
+    order: orderData
    });
    return;
   } catch (err: any) {

@@ -109,17 +109,43 @@ app.delete('/api/orders', checkApiKey, async (req, res) => {
 
 // API: Get one order
 app.get('/api/orders/:id', checkApiKey, async (req, res) => {
+ const id = req.params.id;
+ let orderData = null;
  if (db) {
   try {
-   const doc = await db.collection('orders').doc(req.params.id).get();
+   const doc = await db.collection('orders').doc(id).get();
    if (doc.exists) {
-    return res.json({ order: { id: doc.id, ...doc.data() } });
+    orderData = { id: doc.id, ...doc.data() };
+   }
+   if (!orderData) {
+    const qSnap = await db.collection('orders').where('orderNumber', '==', id).limit(1).get();
+    if (!qSnap.empty) orderData = { id: qSnap.docs[0].id, ...qSnap.docs[0].data() };
+   }
+   if (orderData && (!orderData.subOrders || orderData.subOrders.length === 0)) {
+    let subsSnap = await db.collection('subOrders').where('orderId', '==', orderData.id).get();
+    if (subsSnap.empty && orderData.orderNumber) {
+     subsSnap = await db.collection('subOrders').where('mainOrderNumber', '==', orderData.orderNumber).get();
+    }
+    if (!subsSnap.empty) {
+     orderData.subOrders = subsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
    }
   } catch (err) {}
  }
- const order = orders.find(o => o.id === req.params.id || o.orderId === req.params.id);
- if (!order) return res.status(404).json({ error: 'Order not found' });
- res.json({ order });
+ if (!orderData) {
+  const o = orders.find(x => x.id === id || x.orderId === id || x.orderNumber === id);
+  if (o) orderData = o;
+ }
+ if (!orderData) return res.status(404).json({ error: 'Order not found' });
+ res.json({
+  success: true,
+  orderId: orderData.orderNumber || orderData.id,
+  mainOrderNumber: orderData.orderNumber || orderData.id,
+  status: orderData.status || 'RECEIVED',
+  totalSubOrders: (orderData.subOrders || []).length,
+  subOrders: orderData.subOrders || [],
+  order: orderData
+ });
 });
 
 // API: Create order
