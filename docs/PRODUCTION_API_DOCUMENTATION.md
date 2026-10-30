@@ -293,25 +293,81 @@ Once Amaze Ops splits the order based on nearest partner distance, it automatica
 
 ---
 
-### Webhook 2: Order Lifecycle Status Update
-Whenever order status updates (e.g. `IN_PROCESS`, `QC_APPROVED`, `DELIVERED`):
-* **Sender**: Amaze Ops
-* **Receiver**: Customer App Webhook (`POST {CUSTOMER_APP_URL}/api/orders/{orderNumber}/status`)
+### Webhook 2: Order Lifecycle Status Update (Sub-Order-Wise Breakdown)
+Whenever any partner updates a sub-order's lifecycle stage (e.g. `IN_PROCESS`, `QC_PENDING`, `READY_TO_DELIVER`, `DELIVERED`), Amaze Ops automatically derives the overall order status and pushes this sub-order-wise breakdown directly to the Customer App server.
 
-#### Webhook Payload:
+* **Sender**: Amaze Ops
+* **Receiver**: Customer App Webhook (`POST {CUSTOMER_APP_URL}/api/orders/{mainOrderNumber}/status`)
+* **Headers**: `Content-Type: application/json`, `x-api-key: amaze-fab-super-admin-key-2026`
+
+#### Webhook Payload Received by Customer App:
 ```json
 {
-  "orderNumber": "ORD-1793308518124",
-  "status": "DELIVERED",
+  "mainOrderNumber": "ORD-1793308518124",
+  "overallStatus": "IN_PROCESS",
+  "updatedSubOrder": {
+    "subOrderNumber": "ORD-1793308518124-GP01-1",
+    "status": "QC_PENDING",
+    "partnerCode": "GP01",
+    "partnerName": "Get Me Home",
+    "careCategory": "Signature",
+    "garmentCount": 4,
+    "updatedAt": "2026-10-31T03:30:00.000Z"
+  },
+  "totalSubOrders": 3,
+  "subOrders": [
+    {
+      "subOrderNumber": "ORD-1793308518124-GP01-1",
+      "subOrderCode": "ORD-1793308518124-GP01-1",
+      "partnerName": "Get Me Home",
+      "partnerCode": "GP01",
+      "partnerId": "PRT-001",
+      "status": "QC_PENDING",
+      "careCategory": "Signature",
+      "distance": "10.12 km",
+      "distanceKm": 10.12,
+      "garmentCount": 4,
+      "garmentIds": ["GAR-101", "GAR-102", "GAR-103", "GAR-104"],
+      "updatedAt": "2026-10-31T03:30:00.000Z"
+    },
+    {
+      "subOrderNumber": "ORD-1793308518124-BP01-3",
+      "subOrderCode": "ORD-1793308518124-BP01-3",
+      "partnerName": "Ruby",
+      "partnerCode": "BP01",
+      "partnerId": "PRT-003",
+      "status": "ASSIGNED",
+      "careCategory": "Premium",
+      "distance": "3.44 km",
+      "distanceKm": 3.44,
+      "garmentCount": 2,
+      "garmentIds": ["GAR-105", "GAR-106"],
+      "updatedAt": "2026-10-31T02:30:00.000Z"
+    },
+    {
+      "subOrderNumber": "ORD-1793308518124-GP02-2",
+      "subOrderCode": "ORD-1793308518124-GP02-2",
+      "partnerName": "Hostel Web",
+      "partnerCode": "GP02",
+      "partnerId": "PRT-002",
+      "status": "ASSIGNED",
+      "careCategory": "Pristine",
+      "distance": "4.27 km",
+      "distanceKm": 4.27,
+      "garmentCount": 2,
+      "garmentIds": ["GAR-107", "GAR-108"],
+      "updatedAt": "2026-10-31T02:30:00.000Z"
+    }
+  ],
   "timestamp": "2026-10-31T03:30:00.000Z"
 }
 ```
 
 ---
 
-## 4. Partner App APIs
+## 4. Partner App & Lifecycle APIs
 
-These endpoints are used by the **Partner Mobile App** or partner web portal to process allocated work orders.
+These endpoints are used by the **Partner Mobile App** or partner web portal to process allocated work orders. They can accept either a `subOrderNumber` (e.g. `ORD-xxx-GP01-1`) or a `mainOrderNumber`.
 
 ### 4.1 Fetch Partner Work Orders
 Retrieve only the sub-orders allocated to a specific partner:
@@ -329,8 +385,8 @@ Retrieve only the sub-orders allocated to a specific partner:
       "mainOrderNumber": "ORD-1793308518124",
       "partnerName": "Hostel Web",
       "status": "ASSIGNED",
-      "careCategory": "ORANGE",
-      "distance": "4.5 km",
+      "careCategory": "Pristine",
+      "distance": "4.27 km",
       "garmentCount": 2,
       "garmentIds": ["GAR-002", "GAR-003"]
     }
@@ -338,50 +394,124 @@ Retrieve only the sub-orders allocated to a specific partner:
 }
 ```
 
-### 4.2 Partner Accepts Order
-Moves status from `ASSIGNED` $\rightarrow$ `IN_PROCESS`:
+### 4.2 Partner Accepts Sub-Order
+Moves sub-order status to `IN_PROCESS`:
 * **Method**: `POST`
-* **URL**: `https://amaze-ops.web.app/api/orders/{orderNumber}/accept`
+* **URL**: `https://amaze-ops.web.app/api/orders/{subOrderNumber}/accept` (or `/api/sub-orders/{subOrderNumber}/accept`)
 * **Response**:
 ```json
 {
   "success": true,
   "orderId": "ORD-1793308518124",
+  "mainOrderNumber": "ORD-1793308518124",
+  "subOrderId": "ORD-1793308518124-GP01-1",
   "status": "IN_PROCESS",
+  "overallStatus": "IN_PROCESS",
+  "updatedSubOrder": {
+    "subOrderNumber": "ORD-1793308518124-GP01-1",
+    "status": "IN_PROCESS"
+  },
+  "totalSubOrders": 3,
+  "subOrders": [ ... ],
+  "customerAppNotified": true,
   "message": "Order accepted by partner"
 }
 ```
 
-### 4.3 Partner Submits Garments for QC
-Submits inspection results and flags:
+### 4.3 Partner Submits QC
+Submits inspection results, garment quality scores, and photos:
 * **Method**: `POST`
-* **URL**: `https://amaze-ops.web.app/api/orders/{orderNumber}/qc/submit`
+* **URL**: `https://amaze-ops.web.app/api/orders/{subOrderNumber}/qc/submit` (or `/api/sub-orders/{subOrderNumber}/qc/submit`)
 * **Request**:
 ```json
 {
-  "subOrderNumber": "ORD-1793308518124-GP02-1",
-  "inspectedBy": "Rajesh-Operator",
+  "subOrderNumber": "ORD-1793308518124-GP01-1",
   "garments": [
     {
-      "garmentId": "GAR-002",
-      "status": "VERIFIED",
-      "defects": [],
-      "notes": "Good condition"
+      "garmentId": "GAR-1793393524578-661",
+      "brand": "Raymond",
+      "comments": "Slight stain pre-treated",
+      "photos": {
+        "front": "https://amaze-plant.s3.ap-south-1.amazonaws.com/qc/...front.jpg",
+        "back": "https://amaze-plant.s3.ap-south-1.amazonaws.com/qc/...back.jpg",
+        "other": "https://amaze-plant.s3.ap-south-1.amazonaws.com/qc/...tag.jpg"
+      },
+      "garmentQuality": 4
     }
   ]
 }
 ```
-
-### 4.4 Partner Initiates Delivery
-Marks the order as delivered:
-* **Method**: `POST`
-* **URL**: `https://amaze-ops.web.app/api/orders/{orderNumber}/delivery/initiate`
 * **Response**:
 ```json
 {
   "success": true,
-  "orderId": "ORD-1793308518124",
-  "status": "DELIVERED"
+  "mainOrderNumber": "ORD-1793308518124",
+  "subOrderId": "ORD-1793308518124-GP01-1",
+  "status": "QC_PENDING",
+  "overallStatus": "QC_PENDING",
+  "updatedSubOrder": {
+    "subOrderNumber": "ORD-1793308518124-GP01-1",
+    "status": "QC_PENDING"
+  },
+  "totalSubOrders": 3,
+  "subOrders": [ ... ],
+  "customerAppNotified": true,
+  "message": "QC submitted"
+}
+```
+
+### 4.4 Admin Approves QC
+* **Method**: `POST`
+* **URL**: `https://amaze-ops.web.app/api/orders/{subOrderNumber}/qc/approve`
+* **Response**:
+```json
+{
+  "success": true,
+  "mainOrderNumber": "ORD-1793308518124",
+  "subOrderId": "ORD-1793308518124-GP01-1",
+  "status": "READY_TO_DELIVER",
+  "overallStatus": "READY_TO_DELIVER",
+  "updatedSubOrder": {
+    "subOrderNumber": "ORD-1793308518124-GP01-1",
+    "status": "READY_TO_DELIVER"
+  },
+  "totalSubOrders": 3,
+  "subOrders": [ ... ],
+  "customerAppNotified": true,
+  "message": "QC approved"
+}
+```
+
+### 4.5 Partner Initiates Delivery
+Marks the sub-order as delivered:
+* **Method**: `POST`
+* **URL**: `https://amaze-ops.web.app/api/orders/{subOrderNumber}/delivery/initiate`
+* **Response**:
+```json
+{
+  "success": true,
+  "mainOrderNumber": "ORD-1793308518124",
+  "subOrderId": "ORD-1793308518124-GP01-1",
+  "status": "DELIVERED",
+  "overallStatus": "DELIVERED",
+  "updatedSubOrder": {
+    "subOrderNumber": "ORD-1793308518124-GP01-1",
+    "status": "DELIVERED"
+  },
+  "totalSubOrders": 3,
+  "subOrders": [ ... ],
+  "customerAppNotified": true,
+  "message": "Delivery initiated and completed"
+}
+```
+
+### 4.6 Generic Status Update (Sub-Order or Main Order)
+* **Method**: `PATCH` or `PUT`
+* **URL**: `https://amaze-ops.web.app/api/orders/{id}/status` or `https://amaze-ops.web.app/api/sub-orders/{subOrderId}/status`
+* **Request**:
+```json
+{
+  "status": "IN_PROCESS"
 }
 ```
 

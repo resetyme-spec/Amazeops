@@ -649,16 +649,25 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
             return;
         }
     }
-    // POST /orders/:id/accept (partner accept)
-    const acceptMatch = cleanPath.match(/^\/orders\/([^/]+)\/accept$/);
+    // POST /orders/:id/accept (partner accept sub-order or main order)
+    const acceptMatch = cleanPath.match(/^\/(?:orders|sub-orders)\/([^/]+)\/accept$/);
     if (req.method === 'POST' && acceptMatch) {
         try {
             const targetId = acceptMatch[1];
-            await db.collection('orders').doc(targetId).set({
-                status: 'IN_PROCESS',
-                updatedAt: new Date().toISOString()
-            }, { merge: true });
-            res.status(200).json({ success: true, orderId: targetId, status: 'IN_PROCESS', message: 'Order accepted by partner' });
+            const result = await (0, orderService_1.syncSubOrderStatusAndNotify)(targetId, 'IN_PROCESS');
+            res.status(200).json({
+                success: true,
+                orderId: result.mainOrderId || targetId,
+                mainOrderNumber: result.mainOrderId || targetId,
+                subOrderId: result.subOrderId,
+                status: result.overallStatus,
+                overallStatus: result.overallStatus,
+                updatedSubOrder: result.updatedSubOrder,
+                totalSubOrders: result.subOrders.length,
+                subOrders: result.subOrders,
+                customerAppNotified: result.customerAppNotified,
+                message: 'Order accepted by partner'
+            });
             return;
         }
         catch (err) {
@@ -666,17 +675,28 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
             return;
         }
     }
-    // POST /orders/:id/qc/submit
-    const qcSubmitMatch = cleanPath.match(/^\/orders\/([^/]+)\/qc\/submit$/);
+    // POST /orders/:id/qc/submit (sub-order or main order QC submit)
+    const qcSubmitMatch = cleanPath.match(/^\/(?:orders|sub-orders)\/([^/]+)\/qc\/submit$/);
     if (req.method === 'POST' && qcSubmitMatch) {
         try {
             const targetId = qcSubmitMatch[1];
-            await db.collection('orders').doc(targetId).set({
-                status: 'QC_PENDING',
+            const result = await (0, orderService_1.syncSubOrderStatusAndNotify)(targetId, 'QC_PENDING', {
                 qcSubmission: req.body,
-                updatedAt: new Date().toISOString()
-            }, { merge: true });
-            res.status(200).json({ success: true, orderId: targetId, status: 'QC_PENDING', message: 'QC submitted' });
+                qcStatus: 'QC_PENDING',
+            });
+            res.status(200).json({
+                success: true,
+                orderId: result.mainOrderId || targetId,
+                mainOrderNumber: result.mainOrderId || targetId,
+                subOrderId: result.subOrderId,
+                status: result.overallStatus,
+                overallStatus: result.overallStatus,
+                updatedSubOrder: result.updatedSubOrder,
+                totalSubOrders: result.subOrders.length,
+                subOrders: result.subOrders,
+                customerAppNotified: result.customerAppNotified,
+                message: 'QC submitted'
+            });
             return;
         }
         catch (err) {
@@ -685,16 +705,27 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
         }
     }
     // POST /orders/:id/qc/approve
-    const qcApproveMatch = cleanPath.match(/^\/orders\/([^/]+)\/qc\/approve$/);
+    const qcApproveMatch = cleanPath.match(/^\/(?:orders|sub-orders)\/([^/]+)\/qc\/approve$/);
     if (req.method === 'POST' && qcApproveMatch) {
         try {
             const targetId = qcApproveMatch[1];
-            await db.collection('orders').doc(targetId).set({
-                status: 'READY_TO_DELIVER',
+            const result = await (0, orderService_1.syncSubOrderStatusAndNotify)(targetId, 'READY_TO_DELIVER', {
                 qcApproved: true,
-                updatedAt: new Date().toISOString()
-            }, { merge: true });
-            res.status(200).json({ success: true, orderId: targetId, status: 'READY_TO_DELIVER', message: 'QC approved' });
+                qcStatus: 'APPROVED',
+            });
+            res.status(200).json({
+                success: true,
+                orderId: result.mainOrderId || targetId,
+                mainOrderNumber: result.mainOrderId || targetId,
+                subOrderId: result.subOrderId,
+                status: result.overallStatus,
+                overallStatus: result.overallStatus,
+                updatedSubOrder: result.updatedSubOrder,
+                totalSubOrders: result.subOrders.length,
+                subOrders: result.subOrders,
+                customerAppNotified: result.customerAppNotified,
+                message: 'QC approved'
+            });
             return;
         }
         catch (err) {
@@ -703,17 +734,27 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
         }
     }
     // POST /orders/:id/delivery/initiate
-    const deliveryMatch = cleanPath.match(/^\/orders\/([^/]+)\/delivery\/initiate$/);
+    const deliveryMatch = cleanPath.match(/^\/(?:orders|sub-orders)\/([^/]+)\/delivery\/initiate$/);
     if (req.method === 'POST' && deliveryMatch) {
         try {
             const targetId = deliveryMatch[1];
-            await db.collection('orders').doc(targetId).set({
-                status: 'DELIVERED',
+            const result = await (0, orderService_1.syncSubOrderStatusAndNotify)(targetId, 'DELIVERED', {
                 deliveryStatus: 'COMPLETED',
-                deliveredAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            }, { merge: true });
-            res.status(200).json({ success: true, orderId: targetId, status: 'DELIVERED', message: 'Delivery initiated and completed' });
+                deliveredAt: new Date().toISOString()
+            });
+            res.status(200).json({
+                success: true,
+                orderId: result.mainOrderId || targetId,
+                mainOrderNumber: result.mainOrderId || targetId,
+                subOrderId: result.subOrderId,
+                status: result.overallStatus,
+                overallStatus: result.overallStatus,
+                updatedSubOrder: result.updatedSubOrder,
+                totalSubOrders: result.subOrders.length,
+                subOrders: result.subOrders,
+                customerAppNotified: result.customerAppNotified,
+                message: 'Delivery initiated and completed'
+            });
             return;
         }
         catch (err) {
@@ -740,8 +781,8 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
             return;
         }
     }
-    // PATCH or PUT /orders/:id/status
-    const statusMatch = cleanPath.match(/^\/orders\/([^/]+)(?:\/status)?$/);
+    // PATCH or PUT /orders/:id/status or /sub-orders/:id/status
+    const statusMatch = cleanPath.match(/^\/(?:orders|sub-orders)\/([^/]+)(?:\/status)?$/);
     if ((req.method === 'PATCH' || req.method === 'PUT') && statusMatch) {
         try {
             const targetId = statusMatch[1];
@@ -750,11 +791,20 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
                 res.status(400).json({ error: 'Status is required' });
                 return;
             }
-            await db.collection('orders').doc(targetId).set({
-                status: newStatus,
-                updatedAt: new Date().toISOString()
-            }, { merge: true });
-            res.status(200).json({ success: true, message: `Status updated to ${newStatus}` });
+            const result = await (0, orderService_1.syncSubOrderStatusAndNotify)(targetId, newStatus, req.body);
+            res.status(200).json({
+                success: true,
+                orderId: result.mainOrderId || targetId,
+                mainOrderNumber: result.mainOrderId || targetId,
+                subOrderId: result.subOrderId,
+                status: result.overallStatus,
+                overallStatus: result.overallStatus,
+                updatedSubOrder: result.updatedSubOrder,
+                totalSubOrders: result.subOrders.length,
+                subOrders: result.subOrders,
+                customerAppNotified: result.customerAppNotified,
+                message: `Status updated to ${newStatus}`
+            });
             return;
         }
         catch (err) {

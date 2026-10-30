@@ -40,6 +40,8 @@ exports.onGarmentStatusUpdated = onGarmentStatusUpdated;
 exports.onCriticalCaseCreated = onCriticalCaseCreated;
 exports.onCriticalCaseUpdated = onCriticalCaseUpdated;
 exports.onSubOrderCreated = onSubOrderCreated;
+exports.calculateOverallOrderStatus = calculateOverallOrderStatus;
+exports.syncSubOrderStatusAndNotify = syncSubOrderStatusAndNotify;
 exports.onSubOrderUpdated = onSubOrderUpdated;
 exports.onQCRecordCreated = onQCRecordCreated;
 exports.onInvoiceCreated = onInvoiceCreated;
@@ -222,14 +224,190 @@ async function onSubOrderCreated(snap) {
         }
     }
 }
+const API_KEY = 'amaze-fab-super-admin-key-2026';
+function calculateOverallOrderStatus(subOrders) {
+    if (!subOrders || subOrders.length === 0)
+        return 'RECEIVED';
+    const statuses = subOrders.map(s => String(s.status || '').toUpperCase());
+    // If all are DELIVERED or COMPLETED
+    if (statuses.every(s => s === 'DELIVERED' || s === 'COMPLETED')) {
+        return 'DELIVERED';
+    }
+    // If all are READY_TO_DELIVER or DELIVERED / COMPLETED
+    if (statuses.every(s => ['READY_TO_DELIVER', 'QC_APPROVED', 'COMPLETED', 'DELIVERED'].includes(s))) {
+        return 'READY_TO_DELIVER';
+    }
+    // If any is QC_REJECTED
+    if (statuses.some(s => s === 'QC_REJECTED' || s === 'REJECTED')) {
+        return 'QC_REJECTED';
+    }
+    // If any is QC_PENDING or QC_SENT
+    if (statuses.some(s => ['QC_PENDING', 'QC_SENT', 'QC_IN_PROGRESS'].includes(s))) {
+        return 'QC_PENDING';
+    }
+    // If any is IN_PROCESS / IN_PROGRESS / ACCEPTED / PROCESSING
+    if (statuses.some(s => ['IN_PROCESS', 'IN_PROGRESS', 'ACCEPTED', 'PROCESSING', 'QC_APPROVED', 'READY_TO_DELIVER'].includes(s))) {
+        return 'IN_PROCESS';
+    }
+    // If all are ASSIGNED
+    return 'ASSIGNED';
+}
+async function syncSubOrderStatusAndNotify(targetId, newStatus, extraData = {}) {
+    const db = admin.firestore();
+    const now = new Date().toISOString();
+    // 1. Resolve sub-order or main order
+    let subDocSnap = await db.collection('subOrders').doc(targetId).get();
+    if (!subDocSnap.exists) {
+        const q = await db.collection('subOrders').where('subOrderCode', '==', targetId).limit(1).get();
+        if (!q.empty) {
+            subDocSnap = q.docs[0];
+        }
+        else {
+            const q2 = await db.collection('subOrders').where('subOrderNumber', '==', targetId).limit(1).get();
+            if (!q2.empty) {
+                subDocSnap = q2.docs[0];
+            }
+        }
+    }
+    let mainOrderId = '';
+    let subOrderId = null;
+    let updatedSubOrderData = null;
+    if (subDocSnap.exists) {
+        subOrderId = subDocSnap.id;
+        const subData = subDocSnap.data() || {};
+        mainOrderId = subData.mainOrderNumber || subData.orderId || '';
+        // Update target sub-order
+        const subUpdatePayload = {
+            status: newStatus,
+            updatedAt: now,
+            ...extraData,
+        };
+        await db.collection('subOrders').doc(subOrderId).set(subUpdatePayload, { merge: true });
+    }
+    else {
+        mainOrderId = targetId;
+        if (extraData.subOrderNumber || extraData.subOrderId) {
+            const sId = String(extraData.subOrderNumber || extraData.subOrderId);
+            const sSnap = await db.collection('subOrders').doc(sId).get();
+            if (sSnap.exists) {
+                subOrderId = sId;
+                await db.collection('subOrders').doc(sId).set({
+                    status: newStatus,
+                    updatedAt: now,
+                    ...extraData,
+                }, { merge: true });
+            }
+        }
+    }
+    // 2. Fetch all sibling sub-orders for this main order
+    let siblingSubOrders = [];
+    if (mainOrderId) {
+        let subsSnap = await db.collection('subOrders').where('orderId', '==', mainOrderId).get();
+        if (subsSnap.empty) {
+            subsSnap = await db.collection('subOrders').where('mainOrderNumber', '==', mainOrderId).get();
+        }
+        siblingSubOrders = subsSnap.docs.map(doc => {
+            const d = doc.data();
+            const isTarget = subOrderId ? doc.id === subOrderId : false;
+            const effectiveStatus = isTarget ? newStatus : (d.status || 'ASSIGNED');
+            return {
+                subOrderNumber: d.subOrderNumber || d.subOrderCode || doc.id,
+                subOrderCode: d.subOrderCode || d.subOrderNumber || doc.id,
+                partnerName: d.partnerName || '',
+                partnerCode: d.partnerCode || '',
+                partnerId: d.partnerId || '',
+                status: effectiveStatus,
+                partnerGeoLocation: d.partnerGeoLocation || null,
+                distance: d.distance || (d.distanceKm != null ? `${d.distanceKm} km` : ''),
+                distanceKm: d.distanceKm != null ? Number(d.distanceKm) : null,
+                careCategory: d.careCategory || d.garmentCategory || '',
+                garmentCount: d.garmentCount || (Array.isArray(d.garmentIds) ? d.garmentIds.length : 0),
+                garmentIds: d.garmentIds || [],
+                updatedAt: isTarget ? now : (d.updatedAt || now),
+            };
+        });
+    }
+    // 3. Compute overall status
+    const overallStatus = siblingSubOrders.length > 0
+        ? calculateOverallOrderStatus(siblingSubOrders)
+        : newStatus;
+    // 4. Update parent order in orders collection
+    if (mainOrderId) {
+        const parentUpdate = {
+            status: overallStatus,
+            updatedAt: now,
+        };
+        if (siblingSubOrders.length > 0) {
+            parentUpdate.subOrders = siblingSubOrders;
+        }
+        if (newStatus === 'QC_PENDING' || extraData.qcSubmission) {
+            parentUpdate.qcStatus = 'QC_PENDING';
+            if (extraData.qcSubmission)
+                parentUpdate.qcSubmission = extraData.qcSubmission;
+        }
+        else if (newStatus === 'READY_TO_DELIVER' || newStatus === 'QC_APPROVED') {
+            parentUpdate.qcStatus = 'APPROVED';
+            parentUpdate.qcApproved = true;
+        }
+        else if (newStatus === 'DELIVERED') {
+            parentUpdate.deliveryStatus = 'COMPLETED';
+            parentUpdate.deliveredAt = now;
+        }
+        await db.collection('orders').doc(mainOrderId).set(parentUpdate, { merge: true });
+    }
+    if (subOrderId) {
+        updatedSubOrderData = siblingSubOrders.find(s => s.subOrderNumber === subOrderId || s.subOrderCode === subOrderId) || {
+            subOrderNumber: subOrderId,
+            status: newStatus,
+            updatedAt: now,
+        };
+    }
+    // 5. Send outbound webhook notification to external Customer App
+    const custUrl = process.env.CUSTOMER_APP_URL || 'http://localhost:5000';
+    let notifySuccess = false;
+    if (mainOrderId) {
+        try {
+            const resp = await fetch(`${custUrl}/api/orders/${encodeURIComponent(mainOrderId)}/status`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': API_KEY,
+                },
+                body: JSON.stringify({
+                    mainOrderNumber: mainOrderId,
+                    overallStatus,
+                    updatedSubOrder: updatedSubOrderData,
+                    totalSubOrders: siblingSubOrders.length,
+                    subOrders: siblingSubOrders,
+                    timestamp: now,
+                }),
+            });
+            notifySuccess = resp.ok;
+        }
+        catch (e) {
+            // Non-fatal if customer app is async / offline
+        }
+    }
+    return {
+        success: true,
+        mainOrderId,
+        subOrderId,
+        overallStatus,
+        updatedSubOrder: updatedSubOrderData,
+        subOrders: siblingSubOrders,
+        customerAppNotified: notifySuccess,
+    };
+}
 async function onSubOrderUpdated(change) {
     const subOrder = change.after.data();
     const prevData = change.before.data();
     if (subOrder.status === prevData.status)
         return;
+    const subOrderId = change.after.id;
+    await syncSubOrderStatusAndNotify(subOrderId, subOrder.status, subOrder);
     if (subOrder.status === 'COMPLETED' && prevData.status !== 'COMPLETED') {
         if (subOrder.orderId) {
-            await (0, auth_1.notifyRoles)(['ADMIN', 'STAFF'], 'Sub-Order Completed', `Sub-order for ${subOrder.garmentIds.length} garments has been completed by partner`);
+            await (0, auth_1.notifyRoles)(['ADMIN', 'STAFF'], 'Sub-Order Completed', `Sub-order for ${subOrder.garmentIds?.length || 0} garments has been completed by partner`);
         }
     }
 }
