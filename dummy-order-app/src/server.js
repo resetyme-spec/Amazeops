@@ -448,6 +448,25 @@ app.post('/api/orders/:id/split', checkApiKey, async (req, res) => {
  // Push notification to external Customer App / order system (same pattern as status update)
  const custUrl = process.env.CUSTOMER_APP_URL || 'http://localhost:5000';
  let notifySuccess = false;
+ const formattedSubOrders = ordersToPush.map(so => {
+  const subCode = so.subOrderNumber || so.subOrderCode || `${mainOrderNo}-${so.partnerCode || 'P'}`;
+  const distKm = so.distanceKm != null ? Number(so.distanceKm) : (so.distance ? parseFloat(so.distance) : null);
+  return {
+   subOrderNumber: subCode,
+   subOrderCode: subCode,
+   partnerName: so.partnerName || '',
+   partnerCode: so.partnerCode || '',
+   partnerId: so.partnerId || '',
+   status: so.status || 'ASSIGNED',
+   partnerGeoLocation: so.partnerGeoLocation || so.geoLocation || null,
+   distance: so.distance || (distKm != null ? `${distKm} km` : ''),
+   distanceKm: distKm,
+   careCategory: so.careCategory || so.garmentCategory || '',
+   garmentCount: so.garmentCount || (Array.isArray(so.garmentIds) ? so.garmentIds.length : 0),
+   garmentIds: so.garmentIds || [],
+  };
+ });
+
  try {
   const resp = await fetch(`${custUrl}/api/orders/${encodeURIComponent(mainOrderNo)}/split`, {
    method: 'POST',
@@ -457,17 +476,9 @@ app.post('/api/orders/:id/split', checkApiKey, async (req, res) => {
    },
    body: JSON.stringify({
     mainOrderNumber: mainOrderNo,
-    splitOrders: ordersToPush.map(so => ({
-     subOrderCode: so.subOrderCode,
-     partnerName: so.partnerName,
-     partnerCode: so.partnerCode,
-     status: so.status || 'ASSIGNED',
-     partnerGeoLocation: so.partnerGeoLocation || so.geoLocation || null,
-     garmentIds: so.garmentIds || [],
-     garmentCount: so.garmentIds?.length || so.garmentCount || 0,
-     careCategory: so.careCategory || so.garmentCategory || '',
-     distanceKm: so.distanceKm ?? null,
-    })),
+    status: 'ASSIGNED',
+    totalSubOrders: formattedSubOrders.length,
+    subOrders: formattedSubOrders,
     timestamp: now
    })
   });
@@ -479,9 +490,10 @@ app.post('/api/orders/:id/split', checkApiKey, async (req, res) => {
  res.json({
   success: true,
   mainOrderNumber: mainOrderNo,
-  splitCount: ordersToPush.length,
+  status: 'ASSIGNED',
+  totalSubOrders: formattedSubOrders.length,
   customerAppNotified: notifySuccess,
-  subOrders: ordersToPush
+  subOrders: formattedSubOrders
  });
 });
 

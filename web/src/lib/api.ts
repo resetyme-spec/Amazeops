@@ -454,26 +454,49 @@ export async function fetchDashboardData(): Promise<{ stats: DashboardStats; rec
 
 // ===== NOTIFY EXTERNAL SYSTEM / API OF SPLIT ORDERS =====
 export async function pushSplitOrdersToApi(mainOrderNumber: string, splitOrders: Array<{
+ subOrderNumber?: string;
  subOrderCode: string;
  partnerName: string;
  partnerCode?: string;
  partnerId?: string;
  status: string;
  partnerGeoLocation?: { latitude: number; longitude: number } | null;
+ distance?: string;
+ distanceKm?: number;
  garmentIds?: string[];
  garmentCount?: number;
  careCategory?: string;
- distanceKm?: number;
 }>) {
  try {
-  return await callApi<{ success: boolean; mainOrderNumber: string; splitCount: number }>(
+  const formattedSubOrders = splitOrders.map(so => {
+   const subCode = so.subOrderNumber || so.subOrderCode;
+   const dist = so.distance || (so.distanceKm != null ? `${so.distanceKm} km` : '');
+   return {
+    subOrderNumber: subCode,
+    subOrderCode: subCode,
+    partnerName: so.partnerName,
+    partnerCode: so.partnerCode,
+    partnerId: so.partnerId,
+    status: so.status || 'ASSIGNED',
+    partnerGeoLocation: so.partnerGeoLocation || null,
+    distance: dist,
+    distanceKm: so.distanceKm,
+    careCategory: so.careCategory || '',
+    garmentCount: so.garmentCount || (so.garmentIds ? so.garmentIds.length : 0),
+    garmentIds: so.garmentIds || [],
+   };
+  });
+
+  return await callApi<{ success: boolean; mainOrderNumber: string; totalSubOrders: number; subOrders: any[] }>(
    `/api/orders/${encodeURIComponent(mainOrderNumber)}/split`,
    {
     method: 'POST',
     body: JSON.stringify({
      mainOrderNumber,
-     splitOrders,
-     subOrders: splitOrders,
+     status: 'ASSIGNED',
+     totalSubOrders: formattedSubOrders.length,
+     subOrders: formattedSubOrders,
+     splitOrders: formattedSubOrders,
      timestamp: new Date().toISOString()
     }),
    }

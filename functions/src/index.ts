@@ -345,6 +345,197 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
   }
  }
 
+ // POST /orders/:id/split (push grouped split sub-orders)
+ const splitMatch = cleanPath.match(/^\/orders\/([^/]+)\/split$/);
+ if (req.method === 'POST' && (splitMatch || cleanPath === '/orders/split')) {
+  try {
+   const mainOrderNo = splitMatch ? splitMatch[1] : (req.body.mainOrderNumber || req.body.orderId || req.body.id);
+   const { subOrders, splitOrders, status } = req.body;
+   const rawOrders = subOrders || splitOrders || [];
+   const ordersToPush = rawOrders.map((so: any) => {
+    const subCode = so.subOrderNumber || so.subOrderCode || `${mainOrderNo}-${so.partnerCode || 'P'}`;
+    const distKm = so.distanceKm != null ? Number(so.distanceKm) : (so.distance ? parseFloat(so.distance) : null);
+    return {
+     subOrderNumber: subCode,
+     subOrderCode: subCode,
+     partnerName: so.partnerName || '',
+     partnerCode: so.partnerCode || '',
+     partnerId: so.partnerId || '',
+     status: so.status || 'ASSIGNED',
+     partnerGeoLocation: so.partnerGeoLocation || so.geoLocation || null,
+     distance: so.distance || (distKm != null ? `${distKm} km` : ''),
+     distanceKm: distKm,
+     careCategory: so.careCategory || so.garmentCategory || '',
+     garmentCount: so.garmentCount || (Array.isArray(so.garmentIds) ? so.garmentIds.length : 0),
+     garmentIds: so.garmentIds || [],
+    };
+   });
+
+   const now = new Date().toISOString();
+   const batch = db.batch();
+
+   for (const so of ordersToPush) {
+    const docId = so.subOrderCode;
+    const ref = db.collection('subOrders').doc(docId);
+    batch.set(ref, {
+     id: docId,
+     orderId: mainOrderNo,
+     mainOrderNumber: mainOrderNo,
+     subOrderCode: so.subOrderCode,
+     subOrderNumber: so.subOrderNumber,
+     partnerName: so.partnerName,
+     partnerCode: so.partnerCode,
+     partnerId: so.partnerId,
+     status: so.status,
+     partnerGeoLocation: so.partnerGeoLocation,
+     distance: so.distance,
+     distanceKm: so.distanceKm,
+     distanceFromHub: so.distance,
+     careCategory: so.careCategory,
+     garmentCount: so.garmentCount,
+     garmentIds: so.garmentIds,
+     updatedAt: now,
+    }, { merge: true });
+   }
+
+   const mainOrderRef = db.collection('orders').doc(mainOrderNo);
+   batch.set(mainOrderRef, {
+    status: status || 'ASSIGNED',
+    subOrders: ordersToPush,
+    updatedAt: now,
+   }, { merge: true });
+
+   await batch.commit();
+
+   // Outbound webhook to Customer App
+   const custUrl = process.env.CUSTOMER_APP_URL || 'http://localhost:5000';
+   let notifySuccess = false;
+   try {
+    const resp = await fetch(`${custUrl}/api/orders/${encodeURIComponent(mainOrderNo)}/split`, {
+     method: 'POST',
+     headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY
+     },
+     body: JSON.stringify({
+      mainOrderNumber: mainOrderNo,
+      status: status || 'ASSIGNED',
+      totalSubOrders: ordersToPush.length,
+      subOrders: ordersToPush,
+      timestamp: now,
+     })
+    });
+    notifySuccess = resp.ok;
+   } catch (e: any) {
+    // Non-fatal if customer app is offline
+   }
+
+   res.status(200).json({
+    success: true,
+    mainOrderNumber: mainOrderNo,
+    status: status || 'ASSIGNED',
+    totalSubOrders: ordersToPush.length,
+    customerAppNotified: notifySuccess,
+    subOrders: ordersToPush,
+   });
+   return;
+  } catch (err: any) {
+   res.status(500).json({ error: 'Failed to split order', details: err.message });
+   return;
+  }
+ }
+
+ // POST /orders/:id/accept (partner accept)
+ const acceptMatch = cleanPath.match(/^\/orders\/([^/]+)\/accept$/);
+ if (req.method === 'POST' && acceptMatch) {
+  try {
+   const targetId = acceptMatch[1];
+   await db.collection('orders').doc(targetId).set({
+    status: 'IN_PROCESS',
+    updatedAt: new Date().toISOString()
+   }, { merge: true });
+   res.status(200).json({ success: true, orderId: targetId, status: 'IN_PROCESS', message: 'Order accepted by partner' });
+   return;
+  } catch (err: any) {
+   res.status(500).json({ error: 'Failed to accept order', details: err.message });
+   return;
+  }
+ }
+
+ // POST /orders/:id/qc/submit
+ const qcSubmitMatch = cleanPath.match(/^\/orders\/([^/]+)\/qc\/submit$/);
+ if (req.method === 'POST' && qcSubmitMatch) {
+  try {
+   const targetId = qcSubmitMatch[1];
+   await db.collection('orders').doc(targetId).set({
+    status: 'QC_PENDING',
+    qcSubmission: req.body,
+    updatedAt: new Date().toISOString()
+   }, { merge: true });
+   res.status(200).json({ success: true, orderId: targetId, status: 'QC_PENDING', message: 'QC submitted' });
+   return;
+  } catch (err: any) {
+   res.status(500).json({ error: 'Failed to submit QC', details: err.message });
+   return;
+  }
+ }
+
+ // POST /orders/:id/qc/approve
+ const qcApproveMatch = cleanPath.match(/^\/orders\/([^/]+)\/qc\/approve$/);
+ if (req.method === 'POST' && qcApproveMatch) {
+  try {
+   const targetId = qcApproveMatch[1];
+   await db.collection('orders').doc(targetId).set({
+    status: 'READY_TO_DELIVER',
+    qcApproved: true,
+    updatedAt: new Date().toISOString()
+   }, { merge: true });
+   res.status(200).json({ success: true, orderId: targetId, status: 'READY_TO_DELIVER', message: 'QC approved' });
+   return;
+  } catch (err: any) {
+   res.status(500).json({ error: 'Failed to approve QC', details: err.message });
+   return;
+  }
+ }
+
+ // POST /orders/:id/delivery/initiate
+ const deliveryMatch = cleanPath.match(/^\/orders\/([^/]+)\/delivery\/initiate$/);
+ if (req.method === 'POST' && deliveryMatch) {
+  try {
+   const targetId = deliveryMatch[1];
+   await db.collection('orders').doc(targetId).set({
+    status: 'DELIVERED',
+    deliveryStatus: 'COMPLETED',
+    deliveredAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+   }, { merge: true });
+   res.status(200).json({ success: true, orderId: targetId, status: 'DELIVERED', message: 'Delivery initiated and completed' });
+   return;
+  } catch (err: any) {
+   res.status(500).json({ error: 'Failed to initiate delivery', details: err.message });
+   return;
+  }
+ }
+
+ // GET /partners/:partnerId/sub-orders
+ const partnerSubsMatch = cleanPath.match(/^\/partners\/([^/]+)\/sub-orders$/);
+ if (req.method === 'GET' && partnerSubsMatch) {
+  try {
+   const partnerId = partnerSubsMatch[1];
+   const snap = await db.collection('subOrders').where('partnerId', '==', partnerId).get();
+   let subs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+   if (subs.length === 0) {
+    const snap2 = await db.collection('subOrders').where('partnerCode', '==', partnerId).get();
+    subs = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
+   }
+   res.status(200).json({ success: true, partnerId, count: subs.length, subOrders: subs });
+   return;
+  } catch (err: any) {
+   res.status(500).json({ error: 'Failed to fetch partner sub-orders', details: err.message });
+   return;
+  }
+ }
+
  // PATCH or PUT /orders/:id/status
  const statusMatch = cleanPath.match(/^\/orders\/([^/]+)(?:\/status)?$/);
  if ((req.method === 'PATCH' || req.method === 'PUT') && statusMatch) {
