@@ -16,16 +16,16 @@ async function loadApiConfig() {
   const snap = await getDoc(doc(db, SETTINGS_DOC));
   if (snap.exists()) {
    const d = snap.data();
-   API_BASE = (d.apiUrl || 'http://localhost:3002').replace(/\/$/, '');
+   API_BASE = (d.apiUrl || 'https://amaze-ops.web.app').replace(/\/$/, '');
    API_KEY = d.apiKey || 'amaze-fab-super-admin-key-2026';
    API_HEADER = d.apiHeader || 'x-api-key';
   } else {
-   API_BASE = 'http://localhost:3002';
+   API_BASE = 'https://amaze-ops.web.app';
    API_KEY = 'amaze-fab-super-admin-key-2026';
    API_HEADER = 'x-api-key';
   }
  } catch (e) {
-  API_BASE = 'http://localhost:3002';
+  API_BASE = 'https://amaze-ops.web.app';
   API_KEY = 'amaze-fab-super-admin-key-2026';
   API_HEADER = 'x-api-key';
  }
