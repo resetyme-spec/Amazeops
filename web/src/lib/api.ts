@@ -4,12 +4,19 @@ import type { Order, Partner, Service, Invoice, CriticalCase, Notification, Dash
 // Backwards-compat export for pages still using Firestore direct
 export const db = null as any;
 
-const DEFAULT_API_URL = 'http://localhost:3002';
+const DEFAULT_API_URL = typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+ ? ''
+ : 'https://amaze-ops.web.app';
 const DEFAULT_API_KEY = 'amaze-fab-super-admin-key-2026';
 const DEFAULT_API_HEADER = 'x-api-key';
 
 function getApiBase(): string {
- return (localStorage.getItem('apiBaseUrl') || DEFAULT_API_URL).replace(/\/$/, '');
+ const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('apiBaseUrl') : null;
+ if (stored && (stored.includes('3002') || stored.includes('localhost'))) {
+  try { localStorage.removeItem('apiBaseUrl'); } catch (e) {}
+ }
+ const base = (typeof localStorage !== 'undefined' && localStorage.getItem('apiBaseUrl')) || DEFAULT_API_URL;
+ return base.replace(/\/$/, '');
 }
 
 function getApiKey(): string {

@@ -172,6 +172,42 @@ export const weeklyPartnerSummary = functions.pubsub.schedule('0 8 * * 1').onRun
 // ===== PUBLIC REST API FOR EXTERNAL CUSTOMER APP & OPS ENGINE =====
 const API_KEY = 'amaze-fab-super-admin-key-2026';
 
+function parseCoordinates(geo: any): { lat: number; lng: number } | null {
+ if (!geo) return null;
+ const lat = typeof geo.latitude === 'number' ? geo.latitude :
+             typeof geo.lat === 'number' ? geo.lat :
+             parseFloat(String(geo.latitude || geo.lat || ''));
+ const lng = typeof geo.longitude === 'number' ? geo.longitude :
+             typeof geo.lng === 'number' ? geo.lng :
+             typeof geo.log === 'number' ? geo.log :
+             parseFloat(String(geo.longitude || geo.lng || geo.log || ''));
+ if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return null;
+ return { lat, lng };
+}
+
+function getPartnerCoordinates(p: any): { lat: number; lng: number } | null {
+ return parseCoordinates(p.geoLocation) || parseCoordinates({ latitude: p.latitude, longitude: p.longitude });
+}
+
+function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+ const R = 6371;
+ const dLat = (lat2 - lat1) * Math.PI / 180;
+ const dLon = (lon2 - lon1) * Math.PI / 180;
+ const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+           Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+           Math.sin(dLon / 2) * Math.sin(dLon / 2);
+ const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+ return Math.round(R * c * 100) / 100;
+}
+
+function normalizeCat(c: any): string {
+ const s = String(c || '').toUpperCase();
+ if (s === 'SIGNATURE' || s === 'GOLD') return 'SIGNATURE';
+ if (s === 'PRISTINE' || s === 'ORANGE' || s === 'YELLOW') return 'PRISTINE';
+ if (s === 'PREMIUM' || s === 'BLUE') return 'PREMIUM';
+ return s || 'PREMIUM';
+}
+
 export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, res) => {
  res.set('Access-Control-Allow-Origin', '*');
  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
@@ -229,6 +265,154 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
    const city = data.city || data.customer_city || data.customerCity || (data.customer && data.customer.city) || '';
    const pincode = data.pincode || data.pin_code || data.pinCode || data.postal_code || (data.customer && data.customer.pincode) || '';
 
+   // Safely parse Hub details with multiple format support
+   const rawHub = data.hub || {};
+   const hubCoords = parseCoordinates(rawHub.geoLocation) ||
+                     parseCoordinates(rawHub) ||
+                     parseCoordinates({ latitude: data.hub_latitude || data.hubLatitude || data.hub_lat || data.hubLat, longitude: data.hub_longitude || data.hubLongitude || data.hub_lng || data.hubLng }) ||
+                     { lat: 12.9352, lng: 77.6245 }; // Default to Bangalore Hub if missing
+
+   const hubName = rawHub.name || rawHub.hubName || data.hub_name || data.hubName || 'Koramangala Central Hub';
+   const hubCode = rawHub.code || rawHub.hubCode || data.hub_code || data.hubCode || 'HUB-BLR-01';
+   const hubLocation = rawHub.location || rawHub.hubLocation || data.hub_location || data.hubLocation || 'Koramangala, Bangalore';
+   const hubAddress = rawHub.address || data.hub_address || data.hubAddress || 'No. 42, 80 Feet Road, 4th Block, Koramangala, Bengaluru - 560034';
+   const hubPhone = rawHub.phone || data.hub_phone || data.hubPhone || '+91 98450 12345';
+
+   const hubObj = {
+    name: hubName,
+    code: hubCode,
+    location: hubLocation,
+    address: hubAddress,
+    phone: hubPhone,
+    latitude: hubCoords.lat,
+    longitude: hubCoords.lng,
+    geoLocation: {
+     latitude: hubCoords.lat,
+     longitude: hubCoords.lng,
+    }
+   };
+
+   const garmentsList = Array.isArray(data.garments) ? data.garments.map((g: any, i: number) => {
+    const rawCat = g.garment_category || g.garmentCategory || g.category || 'GOLD';
+    return {
+     garmentId: g.garment_id_code || g.garment_id || g.garmentId || `GAR-${orderId}-${i + 1}`,
+     garment_id_code: g.garment_id_code || g.garment_id || g.garmentId || `GAR-${orderId}-${i + 1}`,
+     qrCode: g.qr_code || g.qrCode || `QR-${orderId}-${i + 1}`,
+     qr_code: g.qr_code || g.qrCode || `QR-${orderId}-${i + 1}`,
+     garmentType: g.garment_type || g.garmentType || 'Garment',
+     garment_type: g.garment_type || g.garmentType || 'Garment',
+     category: rawCat,
+     garmentCategory: rawCat,
+     serviceType: g.service_type || g.serviceType || 'Dry clean',
+     service_type: g.service_type || g.serviceType || 'Dry clean',
+     status: 'PENDING',
+    };
+   }) : [];
+
+   const now = new Date().toISOString();
+
+   // Auto-split garments into sub-orders based on Care Category and nearest partner
+   const partnersSnap = await db.collection('partners').get();
+   const allPartners: any[] = partnersSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })).filter((p: any) => p.active !== false);
+
+   // Group garments by Care Category
+   const catGroups = new Map<string, any[]>();
+   for (const g of garmentsList) {
+    const catStr = String(g.garmentCategory || g.category || 'GOLD');
+    if (!catGroups.has(catStr)) catGroups.set(catStr, []);
+    catGroups.get(catStr)!.push(g);
+   }
+
+   const partnerAssignments: any[] = [];
+   let subNum = 1;
+
+   for (const [cat, group] of catGroups) {
+    const normCat = normalizeCat(cat);
+    const eligible = allPartners.filter((p: any) => {
+     const pCats: string[] = (p.categoryArray || [p.category].filter(Boolean)).map((c: any) => normalizeCat(c));
+     return pCats.indexOf(normCat) !== -1;
+    });
+
+    if (eligible.length === 0) continue;
+
+    // Sort by proximity to Hub (nearest partner wins)
+    const sorted = [...eligible].sort((a: any, b: any) => {
+     const coordsA = getPartnerCoordinates(a);
+     const coordsB = getPartnerCoordinates(b);
+     const distA = coordsA ? getDistanceKm(hubCoords.lat, hubCoords.lng, coordsA.lat, coordsA.lng) : 999999;
+     const distB = coordsB ? getDistanceKm(hubCoords.lat, hubCoords.lng, coordsB.lat, coordsB.lng) : 999999;
+
+     if (Math.abs(distA - distB) >= 0.1) {
+      return distA - distB;
+     }
+     const pa = a.priority || 99;
+     const pb = b.priority || 99;
+     return pa - pb;
+    });
+
+    const best: any = sorted[0];
+    const bestCoords = getPartnerCoordinates(best);
+    const dist = bestCoords ? getDistanceKm(hubCoords.lat, hubCoords.lng, bestCoords.lat, bestCoords.lng) : null;
+
+    partnerAssignments.push({
+     partnerId: best.id,
+     partnerCode: best.partnerCode || 'P',
+     partnerName: best.companyName || best.name || 'Partner',
+     partnerGeoLocation: bestCoords ? { latitude: bestCoords.lat, longitude: bestCoords.lng } : null,
+     careCategory: cat,
+     garmentIds: group.map(g => g.garmentId),
+     garmentCount: group.length,
+     distanceKm: dist,
+     distance: dist != null ? `${dist} km` : '',
+    });
+   }
+
+   // Merge by partnerId — one sub-order per partner
+   const partnerMap = new Map<string, any[]>();
+   for (const a of partnerAssignments) {
+    const list = partnerMap.get(a.partnerId) || [];
+    list.push(a);
+    partnerMap.set(a.partnerId, list);
+   }
+
+   const generatedSubOrders: any[] = [];
+   const batch = db.batch();
+
+   for (const [, group] of partnerMap) {
+    const first = group[0];
+    const allGarmentIds = group.flatMap(a => a.garmentIds);
+    const subOrderCode = `${orderId}-${first.partnerCode}-${subNum}`;
+    const subRef = db.collection('subOrders').doc(subOrderCode);
+
+    const soData = {
+     id: subOrderCode,
+     orderId,
+     mainOrderNumber: orderId,
+     subOrderCode,
+     subOrderNumber: subOrderCode,
+     partnerId: first.partnerId,
+     partnerCode: first.partnerCode,
+     partnerName: first.partnerName,
+     partnerGeoLocation: first.partnerGeoLocation,
+     garmentCategory: group.map(g => g.careCategory).join(','),
+     careCategory: group.map(g => g.careCategory).join(','),
+     garmentIds: allGarmentIds,
+     garmentCount: allGarmentIds.length,
+     distanceKm: first.distanceKm,
+     distance: first.distance,
+     distanceFromHub: first.distance,
+     status: 'ASSIGNED',
+     createdAt: now,
+     updatedAt: now,
+    };
+
+    batch.set(subRef, soData, { merge: true });
+    generatedSubOrders.push(soData);
+    subNum++;
+   }
+
+   const orderStatus = generatedSubOrders.length > 0 ? 'ASSIGNED' : 'RECEIVED';
+
    const orderPayload: any = {
     id: orderId,
     orderId,
@@ -246,34 +430,64 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
      city,
      pincode,
     },
+    hub: hubObj,
+    hubName: hubObj.name,
+    hubCode: hubObj.code,
+    hubLocation: hubObj.location,
+    hubLatitude: hubObj.latitude,
+    hubLongitude: hubObj.longitude,
+    hubAddress: hubObj.address,
+    hubPhone: hubObj.phone,
     careCategory: data.care_category || data.careCategory || 'Normal',
     care_category: data.care_category || data.careCategory || 'Normal',
-    status: data.status || 'RECEIVED',
+    status: orderStatus,
     deliveryStatus: 'PENDING',
-    garments: Array.isArray(data.garments) ? data.garments.map((g: any, i: number) => ({
-     garmentId: g.garment_id_code || g.garment_id || g.garmentId || `GAR-${orderId}-${i + 1}`,
-     garment_id_code: g.garment_id_code || g.garment_id || g.garmentId || `GAR-${orderId}-${i + 1}`,
-     qrCode: g.qr_code || g.qrCode || `QR-${orderId}-${i + 1}`,
-     qr_code: g.qr_code || g.qrCode || `QR-${orderId}-${i + 1}`,
-     garmentType: g.garment_type || g.garmentType || 'Garment',
-     garment_type: g.garment_type || g.garmentType || 'Garment',
-     category: g.category || 'GOLD',
-     garmentCategory: g.garment_category || g.garmentCategory || g.category || 'GOLD',
-     serviceType: g.service_type || g.serviceType || 'Wash & Iron',
-     service_type: g.service_type || g.serviceType || 'Wash & Iron',
-     status: 'PENDING',
-    })) : [],
-    createdAt: data.created_at || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    garments: garmentsList,
+    subOrders: generatedSubOrders,
+    createdAt: data.created_at || now,
+    updatedAt: now,
    };
 
-   await db.collection('orders').doc(orderId).set(orderPayload, { merge: true });
+   batch.set(db.collection('orders').doc(orderId), orderPayload, { merge: true });
+   await batch.commit();
+
+   // Push outbound webhook notification to external Customer App if sub-orders were generated
+   const custUrl = process.env.CUSTOMER_APP_URL || 'http://localhost:5000';
+   let notifySuccess = false;
+   if (generatedSubOrders.length > 0) {
+    try {
+     const resp = await fetch(`${custUrl}/api/orders/${encodeURIComponent(orderId)}/split`, {
+      method: 'POST',
+      headers: {
+       'Content-Type': 'application/json',
+       'x-api-key': API_KEY,
+      },
+      body: JSON.stringify({
+       mainOrderNumber: orderId,
+       status: 'ASSIGNED',
+       totalSubOrders: generatedSubOrders.length,
+       subOrders: generatedSubOrders,
+       timestamp: now,
+      }),
+     });
+     notifySuccess = resp.ok;
+    } catch (e: any) {
+     // Non-fatal if customer app is async
+    }
+   }
 
    res.status(201).json({
     success: true,
     orderId,
-    message: 'Order received and queued for partner assignment',
+    mainOrderNumber: orderId,
+    status: orderStatus,
+    totalSubOrders: generatedSubOrders.length,
+    customerAppNotified: notifySuccess,
+    subOrders: generatedSubOrders,
     order: orderPayload,
+    message: generatedSubOrders.length > 0
+     ? 'Order received and automatically split to nearest partners'
+     : 'Order received and queued for partner assignment',
    });
    return;
   } catch (err: any) {
