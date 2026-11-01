@@ -690,70 +690,30 @@ export default function OrderDetail() {
         </div>
       )}
 
-      {/* Hub / Facility Information */}
-      {(order.hub?.name || order.hubName || order.hub?.code || order.hubCode) && (
+      {/* Source Hub Code */}
+      {(order.hub?.code || order.hubCode) && (
         <div style={{
           background: '#f8fafc',
           border: '1px solid #e2e8f0',
           borderRadius: 12,
-          padding: '14px 16px',
+          padding: '12px 16px',
           margin: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 6, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Building2 size={16} color="#2563eb" />
-              </div>
-              <div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>Source Hub</span>
-                <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#1e293b' }}>
-                  {order.hub?.name || order.hubName || 'Amaze Hub'}
-                </h4>
-              </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 6, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Building2 size={16} color="#2563eb" />
             </div>
-            {(order.hub?.code || order.hubCode) && (
-              <span style={{ fontSize: 11, fontWeight: 700, background: '#e0e7ff', color: '#4338ca', padding: '3px 8px', borderRadius: 6 }}>
-                {order.hub?.code || order.hubCode}
-              </span>
-            )}
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
+              Source Hub
+            </span>
           </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: '#475569' }}>
-            {(order.hub?.location || order.hubLocation) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <MapPin size={14} color="#64748b" style={{ flexShrink: 0 }} />
-                <span>{order.hub?.location || order.hubLocation}</span>
-              </div>
-            )}
-            {(order.hub?.address || order.hubAddress) && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                <span style={{ color: '#94a3b8', fontSize: 11, width: 14, textAlign: 'center' }}>•</span>
-                <span style={{ color: '#64748b' }}>{order.hub?.address || order.hubAddress}</span>
-              </div>
-            )}
-            {(order.hub?.phone || order.hubPhone) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Phone size={14} color="#64748b" style={{ flexShrink: 0 }} />
-                <a href={`tel:${order.hub?.phone || order.hubPhone}`} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>
-                  {order.hub?.phone || order.hubPhone}
-                </a>
-              </div>
-            )}
-            {((order.hub?.latitude != null && order.hub?.longitude != null) || (order.hubLatitude != null && order.hubLongitude != null)) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                <Navigation size={14} color="#059669" style={{ flexShrink: 0 }} />
-                <a
-                  href={`https://www.google.com/maps?q=${order.hub?.latitude ?? order.hubLatitude},${order.hub?.longitude ?? order.hubLongitude}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: '#059669', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                >
-                  View on Google Maps ({order.hub?.latitude ?? order.hubLatitude}, {order.hub?.longitude ?? order.hubLongitude})
-                </a>
-              </div>
-            )}
-          </div>
+          <span style={{ fontSize: 12, fontWeight: 700, background: '#e0e7ff', color: '#4338ca', padding: '4px 10px', borderRadius: 6 }}>
+            {order.hub?.code || order.hubCode}
+          </span>
         </div>
       )}
 
