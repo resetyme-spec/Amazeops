@@ -949,12 +949,6 @@ export default function OrderDetail() {
             <Truck size={18} /> Initiate Delivery
           </button>
         )}
-
-        {canReject && (
-          <button className="btn btn-danger btn-full" onClick={() => setRejectModal(true)} disabled={actionLoading}>
-            <XCircle size={18} /> Reject Order
-          </button>
-        )}
       </div>
 
       {/* Critical Mark Modal */}
@@ -1051,27 +1045,6 @@ export default function OrderDetail() {
               </div>
               <button className="btn btn-critical btn-full" onClick={handleMarkCritical} disabled={actionLoading}>
                 <AlertTriangle size={16} /> Mark as Critical
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reject Modal */}
-      {rejectModal && (
-        <div className="modal-overlay" onClick={() => setRejectModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3><XCircle size={18} color="#dc2626" /> Reject Order</h3>
-              <button className="modal-close" onClick={() => setRejectModal(false)}><XIcon size={20} /></button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label><MessageSquare size={14} /> Rejection Reason *</label>
-                <textarea className="form-input textarea" value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Why are you rejecting this order?" rows={4} />
-              </div>
-              <button className="btn btn-danger btn-full" onClick={handleReject} disabled={actionLoading}>
-                <XCircle size={16} /> Reject Order
               </button>
             </div>
           </div>
