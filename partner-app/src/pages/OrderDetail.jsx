@@ -813,11 +813,6 @@ export default function OrderDetail() {
                     </div>
                   )}
                 </div>
-                {canAccept && !isCriticalGarment && !isReassignedGarment && (
-                  <button className="btn btn-critical btn-sm" onClick={() => { setCriticalModal({ open: true, garment: g }); setCriticalComments(''); setCriticalPhotos(['', '', '']); }}>
-                    <AlertTriangle size={14} /> Mark Critical
-                  </button>
-                )}
                 {canSubmitQC && !isCriticalGarment && !isReassignedGarment && (
                   <button
                     type="button"
