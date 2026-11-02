@@ -8,7 +8,15 @@ import type { Order, Partner, SubOrder, Garment } from '../types';
 import { assignGarmentsToPartners, getDistanceKm, getPartnerCoordinates, parseCoordinates } from '../lib/assignment';
 import { useAuth } from '../contexts/AuthContext';
 
-const STATUS_OPTIONS = ['', 'RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'QC_APPROVED', 'COMPLETED', 'QC_REJECTED', 'REJECTED', 'CANCELLED'];
+const STATUS_OPTIONS: { label: string; value: string }[] = [
+ { label: 'All Statuses', value: '' },
+ { label: 'Assigned', value: 'ASSIGNED' },
+ { label: 'In Progress', value: 'IN_PROCESS' },
+ { label: 'QC Pending', value: 'QC_PENDING' },
+ { label: 'QC Approved', value: 'QC_APPROVED' },
+ { label: 'QC Rejected', value: 'QC_REJECTED' },
+ { label: 'Completed', value: 'COMPLETED' },
+];
 const STATUS_COLORS: Record<string, string> = {
  RECEIVED: 'badge-received', ASSIGNED: 'badge-assigned', IN_PROCESS: 'badge-in_process',
  COMPLETED: 'badge-completed', DELIVERED: 'badge-completed',
@@ -994,7 +1002,11 @@ export default function OrdersPage() {
       minWidth: 150
      }}
     >
-     {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s === 'QC_APPROVED' ? 'QC Approved' : s === 'QC_PENDING' ? 'QC Pending' : s === 'IN_PROCESS' ? 'In Progress' : s || 'All Statuses'}</option>)}
+     {STATUS_OPTIONS.map(opt => (
+      <option key={opt.value} value={opt.value}>
+       {opt.label}
+      </option>
+     ))}
     </select>
    </div>
 
