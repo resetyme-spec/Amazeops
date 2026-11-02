@@ -561,8 +561,9 @@ export default function OrderDetail() {
     return g.qcStatus === 'QC_REJECTED' || !!rej || isMentioned;
   }).length;
 
-  const isReadyForDelivery = order.status === 'READY_FOR_DELIVERY' || order.deliveryStatus === 'READY_FOR_DELIVERY';
-  const isQcRejected = !isReadyForDelivery && (
+  const isCompleted = order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.status === 'QC_APPROVED' || order.qcStatus === 'QC_APPROVED';
+  const isReadyForDelivery = false;
+  const isQcRejected = !isCompleted && (
     order.status === 'QC_REJECTED' ||
     order.qcStatus === 'QC_REJECTED' ||
     !!order.qcRejection ||
@@ -573,12 +574,13 @@ export default function OrderDetail() {
   const actualPassedCount = Math.max(0, garments.length - actualRejectedCount);
   const passedCount = actualPassedCount;
   const allGarmentsPassed = garments.length > 0 && garments.every(g => g.qcStatus === 'QC_PASSED') && actualRejectedCount === 0;
-  const isQcApproved = !isReadyForDelivery && !isQcRejected && (
+  const isQcApproved = isCompleted;
+  const isQcApprovedCheck = !isCompleted && !isQcRejected && (
     order.qcStatus === 'QC_APPROVED' ||
     order.status === 'QC_APPROVED' ||
     allGarmentsPassed
   );
-  const isQcPending = !isReadyForDelivery && !isQcApproved && !isQcRejected && (
+  const isQcPending = !isCompleted && !isQcRejected && (
     order.qcStatus === 'QC_PENDING' ||
     order.status === 'QC_SENT'
   );
@@ -587,8 +589,8 @@ export default function OrderDetail() {
   const isRejected = isNormalRejected || isQcRejected;
 
   const canAccept = !isAccepted && !isRejected && !isQcApproved && !isQcPending && !isReadyForDelivery && (order.status === 'ASSIGNED' || order.status === 'RECEIVED');
-  const canSubmitQC = isAccepted && !isQcPending && !isQcApproved && !isQcRejected && !isReadyForDelivery;
-  const canInitiateDelivery = isQcApproved && !isReadyForDelivery && (!order.deliveryStatus || order.deliveryStatus === 'PENDING');
+  const canSubmitQC = isAccepted && !isQcPending && !isCompleted && !isQcRejected;
+  const canInitiateDelivery = false;
   const canReject = canAccept;
 
   return (
@@ -607,7 +609,7 @@ export default function OrderDetail() {
         <div className="status-row">
           <span className="status-label">Status:</span>
           <span className={`status-badge-lg ${isReadyForDelivery ? 'status-approved' : isQcRejected ? 'status-rejected' : isQcApproved ? 'status-approved' : isQcPending ? 'status-pending' : isNormalRejected ? 'status-rejected' : 'status-active'}`}>
-            {isReadyForDelivery ? 'READY TO DELIVER' : isQcRejected ? 'QC REJECTED' : isQcApproved ? 'QC APPROVED' : isQcPending ? 'QC SENT' : order.status}
+            {isCompleted ? 'COMPLETED' : isQcRejected ? 'QC REJECTED' : isQcPending ? 'QC SENT' : order.status}
           </span>
         </div>
       </div>
@@ -641,33 +643,8 @@ export default function OrderDetail() {
         </div>
       )}
 
-      {/* Ready for Delivery Banner */}
-      {isReadyForDelivery && (
-        <div style={{
-          background: '#ecfdf5',
-          border: '1.5px solid #6ee7b7',
-          borderRadius: 12,
-          padding: 16,
-          margin: '14px 16px',
-          boxShadow: '0 2px 8px rgba(5, 150, 105, 0.08)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Truck size={20} color="#059669" />
-            </div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 16, color: '#059669' }}>Delivery Initiated — Ready to Deliver</div>
-              <div style={{ fontSize: 13, color: '#047857', marginTop: 2 }}>
-                Quality inspection is passed and delivery has been initiated. This order is now ready for customer delivery / pickup.
-                {order.deliveryInitiatedAt && <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: '#065f46' }}>Initiated at: {new Date(order.deliveryInitiatedAt).toLocaleString('en-IN')}</span>}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* QC Approved Banner */}
-      {isQcApproved && (
+      {/* Completed Banner */}
+      {isCompleted && (
         <div style={{
           background: '#f0fdf4',
           border: '1.5px solid #86efac',
@@ -681,39 +658,12 @@ export default function OrderDetail() {
               <CheckCircle2 size={20} color="#16a34a" />
             </div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 16, color: '#16a34a' }}>QC Passed & Approved!</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: '#16a34a' }}>Order Completed</div>
               <div style={{ fontSize: 13, color: '#15803d', marginTop: 2 }}>
-                All garments passed quality inspection. You can now initiate delivery to the customer.
+                Quality inspection passed and partner processing is fully completed.
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Source Hub Code */}
-      {(order.hub?.code || order.hubCode) && (
-        <div style={{
-          background: '#f8fafc',
-          border: '1px solid #e2e8f0',
-          borderRadius: 12,
-          padding: '12px 16px',
-          margin: '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 6, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Building2 size={16} color="#2563eb" />
-            </div>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
-              Source Hub
-            </span>
-          </div>
-          <span style={{ fontSize: 12, fontWeight: 700, background: '#e0e7ff', color: '#4338ca', padding: '4px 10px', borderRadius: 6 }}>
-            {order.hub?.code || order.hubCode}
-          </span>
         </div>
       )}
 
@@ -904,11 +854,7 @@ export default function OrderDetail() {
           </button>
         )}
 
-        {canInitiateDelivery && (
-          <button className="btn btn-success btn-full" onClick={handleDelivery} disabled={actionLoading}>
-            <Truck size={18} /> Initiate Delivery
-          </button>
-        )}
+        
       </div>
 
       {/* Critical Mark Modal */}

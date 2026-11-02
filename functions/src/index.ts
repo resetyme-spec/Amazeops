@@ -564,7 +564,7 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
     }
    }
 
-   const stages = ['RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'COMPLETED', 'DELIVERED'];
+   const stages = ['RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'COMPLETED'];
    const curIdx = stages.indexOf(curStatus);
 
    const timeline = stages.map((st, idx) => ({
@@ -751,9 +751,10 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
  if (req.method === 'POST' && qcApproveMatch) {
   try {
    const targetId = qcApproveMatch[1];
-   const result = await syncSubOrderStatusAndNotify(targetId, 'READY_TO_DELIVER', {
+   const result = await syncSubOrderStatusAndNotify(targetId, 'COMPLETED', {
     qcApproved: true,
     qcStatus: 'APPROVED',
+    completedAt: new Date().toISOString(),
    });
    res.status(200).json({
     success: true,
@@ -766,7 +767,7 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
     totalSubOrders: result.subOrders.length,
     subOrders: result.subOrders,
     customerAppNotified: result.customerAppNotified,
-    message: 'QC approved'
+    message: 'QC approved - Order completed'
    });
    return;
   } catch (err: any) {
@@ -780,9 +781,9 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
  if (req.method === 'POST' && deliveryMatch) {
   try {
    const targetId = deliveryMatch[1];
-   const result = await syncSubOrderStatusAndNotify(targetId, 'DELIVERED', {
+   const result = await syncSubOrderStatusAndNotify(targetId, 'COMPLETED', {
     deliveryStatus: 'COMPLETED',
-    deliveredAt: new Date().toISOString()
+    completedAt: new Date().toISOString()
    });
    res.status(200).json({
     success: true,

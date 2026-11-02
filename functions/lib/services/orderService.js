@@ -229,13 +229,9 @@ function calculateOverallOrderStatus(subOrders) {
     if (!subOrders || subOrders.length === 0)
         return 'RECEIVED';
     const statuses = subOrders.map(s => String(s.status || '').toUpperCase());
-    // If all are DELIVERED or COMPLETED
-    if (statuses.every(s => s === 'DELIVERED' || s === 'COMPLETED')) {
-        return 'DELIVERED';
-    }
-    // If all are READY_TO_DELIVER or DELIVERED / COMPLETED
-    if (statuses.every(s => ['READY_TO_DELIVER', 'QC_APPROVED', 'COMPLETED', 'DELIVERED'].includes(s))) {
-        return 'READY_TO_DELIVER';
+    // If all are COMPLETED (or legacy DELIVERED / READY_TO_DELIVER)
+    if (statuses.every(s => ['COMPLETED', 'DELIVERED', 'READY_TO_DELIVER', 'READY_FOR_DELIVERY', 'QC_APPROVED'].includes(s))) {
+        return 'COMPLETED';
     }
     // If any is QC_REJECTED
     if (statuses.some(s => s === 'QC_REJECTED' || s === 'REJECTED')) {
@@ -245,8 +241,8 @@ function calculateOverallOrderStatus(subOrders) {
     if (statuses.some(s => ['QC_PENDING', 'QC_SENT', 'QC_IN_PROGRESS'].includes(s))) {
         return 'QC_PENDING';
     }
-    // If any is IN_PROCESS / IN_PROGRESS / ACCEPTED / PROCESSING
-    if (statuses.some(s => ['IN_PROCESS', 'IN_PROGRESS', 'ACCEPTED', 'PROCESSING', 'QC_APPROVED', 'READY_TO_DELIVER'].includes(s))) {
+    // If any is IN_PROCESS / IN_PROGRESS / ACCEPTED / PROCESSING / COMPLETED
+    if (statuses.some(s => ['IN_PROCESS', 'IN_PROGRESS', 'ACCEPTED', 'PROCESSING', 'COMPLETED', 'QC_APPROVED'].includes(s))) {
         return 'IN_PROCESS';
     }
     // If all are ASSIGNED
@@ -345,13 +341,10 @@ async function syncSubOrderStatusAndNotify(targetId, newStatus, extraData = {}) 
             if (extraData.qcSubmission)
                 parentUpdate.qcSubmission = extraData.qcSubmission;
         }
-        else if (newStatus === 'READY_TO_DELIVER' || newStatus === 'QC_APPROVED') {
+        else if (['COMPLETED', 'READY_TO_DELIVER', 'QC_APPROVED', 'DELIVERED'].includes(newStatus)) {
             parentUpdate.qcStatus = 'APPROVED';
             parentUpdate.qcApproved = true;
-        }
-        else if (newStatus === 'DELIVERED') {
-            parentUpdate.deliveryStatus = 'COMPLETED';
-            parentUpdate.deliveredAt = now;
+            parentUpdate.completedAt = now;
         }
         await db.collection('orders').doc(mainOrderId).set(parentUpdate, { merge: true });
     }

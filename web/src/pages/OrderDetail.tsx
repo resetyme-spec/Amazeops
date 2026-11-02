@@ -75,7 +75,7 @@ function customerLabel(name: string, category: string): React.ReactNode {
 
 function getBadgeInfo(status: string) {
   const s = (status || '').toUpperCase();
-  if (s === 'READY_FOR_DELIVERY') return { label: 'READY TO DELIVER', bg: '#ecfdf5', color: '#059669', border: '#a7f3d0' };
+  if (s === 'COMPLETED' || s === 'DELIVERED' || s === 'READY_FOR_DELIVERY') return { label: 'COMPLETED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
   if (s === 'QC_APPROVED') return { label: 'QC APPROVED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
   if (s === 'QC_PENDING' || s === 'QC_SENT') return { label: 'QC PENDING', bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' };
   if (s === 'QC_REJECTED') return { label: 'QC REJECTED', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };

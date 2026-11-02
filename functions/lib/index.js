@@ -529,7 +529,7 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
                     });
                 }
             }
-            const stages = ['RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'COMPLETED', 'DELIVERED'];
+            const stages = ['RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'COMPLETED'];
             const curIdx = stages.indexOf(curStatus);
             const timeline = stages.map((st, idx) => ({
                 stage: st,
@@ -709,9 +709,10 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
     if (req.method === 'POST' && qcApproveMatch) {
         try {
             const targetId = qcApproveMatch[1];
-            const result = await (0, orderService_1.syncSubOrderStatusAndNotify)(targetId, 'READY_TO_DELIVER', {
+            const result = await (0, orderService_1.syncSubOrderStatusAndNotify)(targetId, 'COMPLETED', {
                 qcApproved: true,
                 qcStatus: 'APPROVED',
+                completedAt: new Date().toISOString(),
             });
             res.status(200).json({
                 success: true,
@@ -724,7 +725,7 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
                 totalSubOrders: result.subOrders.length,
                 subOrders: result.subOrders,
                 customerAppNotified: result.customerAppNotified,
-                message: 'QC approved'
+                message: 'QC approved - Order completed'
             });
             return;
         }
@@ -738,9 +739,9 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
     if (req.method === 'POST' && deliveryMatch) {
         try {
             const targetId = deliveryMatch[1];
-            const result = await (0, orderService_1.syncSubOrderStatusAndNotify)(targetId, 'DELIVERED', {
+            const result = await (0, orderService_1.syncSubOrderStatusAndNotify)(targetId, 'COMPLETED', {
                 deliveryStatus: 'COMPLETED',
-                deliveredAt: new Date().toISOString()
+                completedAt: new Date().toISOString()
             });
             res.status(200).json({
                 success: true,

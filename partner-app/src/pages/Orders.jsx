@@ -27,12 +27,8 @@ const STATUS_FILTERS = [
  { label: 'Assigned', value: 'ASSIGNED' },
  { label: 'In Progress', value: 'IN_PROCESS' },
  { label: 'QC Sent', value: 'QC_SENT' },
- { label: 'QC Pending', value: 'QC_PENDING' },
  { label: 'QC Rejected', value: 'QC_REJECTED' },
- { label: 'QC Approved', value: 'QC_APPROVED' },
- { label: 'Ready to Deliver', value: 'READY_FOR_DELIVERY' },
- { label: 'Rejected', value: 'REJECTED' },
- { label: 'Completed', value: 'DELIVERED' },
+ { label: 'Completed', value: 'COMPLETED' },
 ];
 
 function careBadge(cat) {
@@ -123,11 +119,8 @@ export default function Orders() {
 
  const filtered = orders.filter(o => {
   if (statusFilter) {
-   if (statusFilter === 'READY_FOR_DELIVERY') {
-    if (o.status !== 'READY_FOR_DELIVERY' && o.deliveryStatus !== 'READY_FOR_DELIVERY') return false;
-   } else if (statusFilter === 'QC_APPROVED') {
-    if (o.status === 'READY_FOR_DELIVERY') return false;
-    if (o.status !== 'QC_APPROVED' && o.qcStatus !== 'QC_APPROVED') return false;
+   if (statusFilter === 'COMPLETED') {
+    if (o.status !== 'COMPLETED' && o.status !== 'DELIVERED' && o.status !== 'READY_FOR_DELIVERY' && o.qcStatus !== 'QC_APPROVED') return false;
    } else if (statusFilter === 'QC_REJECTED') {
     if (o.status !== 'QC_REJECTED' && o.qcStatus !== 'QC_REJECTED') return false;
    } else if (statusFilter === 'QC_SENT') {
@@ -150,10 +143,7 @@ export default function Orders() {
   ASSIGNED: orders.filter(o => o.status === 'ASSIGNED' || o.status === 'RECEIVED').length,
   IN_PROCESS: orders.filter(o => o.status === 'IN_PROCESS').length,
   QC_SENT: orders.filter(o => o.status === 'QC_SENT' || o.qcStatus === 'QC_PENDING').length,
-  QC_APPROVED: orders.filter(o => (o.qcStatus === 'QC_APPROVED' || o.status === 'QC_APPROVED') && o.status !== 'READY_FOR_DELIVERY' && o.deliveryStatus !== 'READY_FOR_DELIVERY').length,
-  READY_FOR_DELIVERY: orders.filter(o => o.status === 'READY_FOR_DELIVERY' || o.deliveryStatus === 'READY_FOR_DELIVERY').length,
-  QC_REJECTED: orders.filter(o => o.status === 'QC_REJECTED' || o.qcStatus === 'QC_REJECTED').length,
-  COMPLETED: orders.filter(o => o.status === 'COMPLETED' || o.status === 'DELIVERED').length,
+  COMPLETED: orders.filter(o => o.status === 'COMPLETED' || o.status === 'DELIVERED' || o.status === 'READY_FOR_DELIVERY' || o.qcStatus === 'QC_APPROVED').length,
  };
 
  const handleQuickAccept = async (orderId) => {
@@ -181,30 +171,27 @@ export default function Orders() {
  };
 
  const getOrderTheme = (order) => {
-  const isReady = order.status === 'READY_FOR_DELIVERY' || order.deliveryStatus === 'READY_FOR_DELIVERY';
-  const isQcRej = order.qcStatus === 'QC_REJECTED' || order.status === 'QC_REJECTED';
-  const isQcApp = (order.qcStatus === 'QC_APPROVED' || order.status === 'QC_APPROVED') && !isReady && order.status !== 'DELIVERED' && order.status !== 'COMPLETED';
-  const isQcSent = order.status === 'QC_SENT' || order.qcStatus === 'QC_PENDING';
-  const isInProc = order.status === 'IN_PROCESS';
-  const isAssigned = order.status === 'ASSIGNED' || order.status === 'RECEIVED';
-  const isDelivered = order.status === 'DELIVERED' || order.status === 'COMPLETED';
+  const isCompleted = order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.qcStatus === 'QC_APPROVED' || order.status === 'QC_APPROVED';
+  const isQcRej = !isCompleted && (order.qcStatus === 'QC_REJECTED' || order.status === 'QC_REJECTED');
+  const isQcSent = !isCompleted && !isQcRej && (order.status === 'QC_SENT' || order.qcStatus === 'QC_PENDING');
+  const isInProc = !isCompleted && !isQcRej && !isQcSent && order.status === 'IN_PROCESS';
+  const isAssigned = !isCompleted && !isQcRej && !isQcSent && !isInProc && (order.status === 'ASSIGNED' || order.status === 'RECEIVED');
 
-  if (isReady) {
+  if (isCompleted) {
    return {
-    key: 'READY_FOR_DELIVERY',
-    label: 'READY TO DELIVER',
-    headerBg: '#047857',
-    bodyBg: '#ecfdf5',
-    borderColor: '#6ee7b7',
-    customerColor: '#064e3b',
-    accentColor: '#059669',
-    badgeBg: 'rgba(255, 255, 255, 0.22)',
-    badgeColor: '#ffffff',
-    badgeBorder: 'rgba(255, 255, 255, 0.45)',
-    Icon: Truck,
+    key: 'COMPLETED',
+    label: 'COMPLETED',
+    badgeClass: 'status-approved',
+    borderColor: '#86efac',
+    headerBg: '#f0fdf4',
+    customerColor: '#166534',
+    partnerBadgeBg: '#dcfce7',
+    partnerBadgeColor: '#15803d',
+    showAccept: false,
+    showQc: false,
+    showDelivery: false,
    };
   }
-
   if (isQcRej) {
    return {
     key: 'QC_REJECTED',

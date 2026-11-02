@@ -8,23 +8,22 @@ import type { Order, Partner, SubOrder, Garment } from '../types';
 import { assignGarmentsToPartners, getDistanceKm, getPartnerCoordinates, parseCoordinates } from '../lib/assignment';
 import { useAuth } from '../contexts/AuthContext';
 
-const STATUS_OPTIONS = ['', 'RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'QC_APPROVED', 'READY_FOR_DELIVERY', 'COMPLETED', 'DELIVERED', 'QC_REJECTED', 'REJECTED', 'CANCELLED'];
+const STATUS_OPTIONS = ['', 'RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'QC_APPROVED', 'COMPLETED', 'QC_REJECTED', 'REJECTED', 'CANCELLED'];
 const STATUS_COLORS: Record<string, string> = {
  RECEIVED: 'badge-received', ASSIGNED: 'badge-assigned', IN_PROCESS: 'badge-in_process',
- COMPLETED: 'badge-completed', DELIVERED: 'badge-delivered',
+ COMPLETED: 'badge-completed', DELIVERED: 'badge-completed',
  QC_PENDING: 'badge-qc_pending', QC_APPROVED: 'badge-completed', READY_FOR_DELIVERY: 'badge-completed',
  QC_REJECTED: 'badge-rejected', CANCELLED: 'badge-cancelled', REJECTED: 'badge-rejected',
 };
 
 function getBadgeInfo(status: string) {
  const s = (status || '').toUpperCase();
- if (s === 'READY_FOR_DELIVERY') return { label: 'READY TO DELIVER', bg: '#ecfdf5', color: '#059669', border: '#a7f3d0' };
+ if (s === 'COMPLETED' || s === 'DELIVERED' || s === 'READY_FOR_DELIVERY') return { label: 'COMPLETED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
  if (s === 'QC_APPROVED') return { label: 'QC APPROVED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
  if (s === 'QC_PENDING' || s === 'QC_SENT') return { label: 'QC PENDING', bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' };
  if (s === 'QC_REJECTED') return { label: 'QC REJECTED', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
  if (s === 'IN_PROCESS') return { label: 'IN PROGRESS', bg: '#fefce8', color: '#ca8a04', border: '#fef08a' };
  if (s === 'ASSIGNED') return { label: 'ASSIGNED', bg: '#f5f3ff', color: '#7c3aed', border: '#ddd6fe' };
- if (s === 'COMPLETED' || s === 'DELIVERED') return { label: s, bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
  if (s === 'REJECTED' || s === 'CANCELLED') return { label: s, bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
  return { label: s || 'RECEIVED', bg: '#f3f4f6', color: '#374151', border: '#e5e7eb' };
 }
@@ -178,56 +177,40 @@ function buildOrderTimeline(order: Order, subs: SubOrder[], qcRecord?: any, effe
   badgeText: step5Status === 'COMPLETED' ? 'Approved' : step5Status === 'REJECTED' ? 'Rejected' : step5Status === 'IN_PROGRESS' ? 'Reviewing' : 'Pending',
  };
 
- // 6. Ready to Deliver / Delivery Initiated
- const readySubs = subs.filter(s => ['READY_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'].includes(s.status) || (s as any).deliveryStatus === 'READY_FOR_DELIVERY');
- const step6Time = (order as any).deliveryInitiatedAt || subs.find(s => (s as any)?.deliveryInitiatedAt)?.deliveryInitiatedAt || (isDeliveryInitiated ? (order.updatedAt || subs[0]?.updatedAt) : null);
+ // 6. Completed
+ const completedSubs = subs.filter(s => ['COMPLETED', 'DELIVERED', 'READY_FOR_DELIVERY', 'QC_APPROVED'].includes(s.status));
+ const isAllCompleted = (order.status || '').toUpperCase() === 'COMPLETED' || (hasSubs && subs.every(s => ['COMPLETED', 'DELIVERED', 'READY_FOR_DELIVERY', 'QC_APPROVED'].includes((s.status || '').toUpperCase())));
+ const step6Time = (order as any).completedAt || (order as any).deliveredAt || (isAllCompleted ? order.updatedAt : null);
  let step6Status: TimelineStep['status'] = 'PENDING';
- if (isDelivered) {
+ if (isAllCompleted) {
   step6Status = 'COMPLETED';
- } else if (hasSubs && readySubs.length === subs.length) {
-  step6Status = 'COMPLETED';
- } else if (readySubs.length > 0) {
+ } else if (hasSubs && completedSubs.length > 0) {
   step6Status = 'IN_PROGRESS';
  } else if (isQcApproved) {
   step6Status = 'IN_PROGRESS';
  }
- const step6Desc = (hasSubs && readySubs.length === subs.length)
-  ? `Delivery initiated for all partners`
-  : readySubs.length > 0
-  ? `Delivery initiated for ${readySubs.length}/${subs.length} partners (${readySubs.map(s => s.partnerName).join(', ')})`
-  : isDeliveryInitiated
-  ? `Delivery initiated by ${(order as any).deliveryInitiatedBy || (subs[0] as any)?.deliveryInitiatedBy || 'Partner'}`
-  : isQcApproved ? 'Partner ready to dispatch' : 'Pending QC completion';
+ const step6Desc = (hasSubs && completedSubs.length === subs.length)
+  ? `Partner processing completed for all garments`
+  : completedSubs.length > 0
+  ? `Completed for ${completedSubs.length}/${subs.length} partners (${completedSubs.map(s => s.partnerName).join(', ')})`
+  : isQcApproved ? 'QC approved - processing complete' : 'Pending QC verification';
  const step6: TimelineStep = {
-  id: 'ready_delivery',
+  id: 'completed',
   stepNum: 6,
-  title: 'Ready to Deliver',
+  title: 'Completed',
   description: step6Desc,
-  timeframe: isDeliveryInitiated ? fmt(step6Time) : undefined,
+  timeframe: isAllCompleted ? fmt(step6Time) : undefined,
   status: step6Status,
-  badgeText: isDeliveryInitiated ? 'Initiated' : step6Status === 'IN_PROGRESS' ? 'Ready' : 'Pending',
+  badgeText: isAllCompleted ? 'Completed' : step6Status === 'IN_PROGRESS' ? 'In Progress' : 'Pending',
  };
 
- // 7. Delivered to Customer
- const step7Time = (order as any).deliveredAt || (isDelivered ? order.updatedAt : null);
- const step7: TimelineStep = {
-  id: 'delivered',
-  stepNum: 7,
-  title: 'Delivered',
-  description: isDelivered ? `Delivered to ${order.customer?.name || 'Customer'}` : 'Customer delivery pending',
-  timeframe: isDelivered ? fmt(step7Time) : undefined,
-  status: isDelivered ? 'COMPLETED' : 'PENDING',
-  badgeText: isDelivered ? 'Delivered' : 'Pending',
- };
-
- return [step1, step2, step3, step4, step5, step6, step7];
+ return [step1, step2, step3, step4, step5, step6];
 }
 
 function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): TimelineStep[] {
  const soStatus = (so.status || '').toUpperCase();
- const isDelivered = soStatus === 'DELIVERED' || soStatus === 'COMPLETED';
- const isReady = isDelivered || soStatus === 'READY_FOR_DELIVERY' || (so as any).deliveryStatus === 'READY_FOR_DELIVERY';
- const isQcApproved = isReady || soStatus === 'QC_APPROVED' || (so as any).qcStatus === 'QC_APPROVED' || qcRecord?.status === 'QC_APPROVED';
+ const isCompleted = soStatus === 'COMPLETED' || soStatus === 'DELIVERED' || soStatus === 'READY_FOR_DELIVERY' || soStatus === 'QC_APPROVED' || (so as any).qcStatus === 'QC_APPROVED';
+ const isQcApproved = isCompleted || qcRecord?.status === 'QC_APPROVED';
  const isQcRejected = soStatus === 'QC_REJECTED' || (so as any).qcStatus === 'QC_REJECTED' || qcRecord?.status === 'QC_REJECTED';
  const isQcSubmitted = isQcApproved || isQcRejected || soStatus === 'QC_PENDING' || soStatus === 'QC_SENT' || !!(so as any)?.qcSubmittedAt || (qcRecord && (qcRecord.subOrderId === so.id || qcRecord.orderId === so.id));
  const isInProcess = isQcSubmitted || soStatus === 'IN_PROCESS' || !!(so as any)?.acceptedAt;
@@ -237,8 +220,7 @@ function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): Timel
  const acceptedTime = (so as any)?.acceptedAt || (isInProcess ? so.updatedAt : null);
  const qcSubmittedTime = qcRecord?.submittedAt || (so as any)?.qcSubmittedAt || (isQcSubmitted ? so.updatedAt : null);
  const qcApprovedTime = qcRecord?.approvedAt || (isQcApproved ? so.updatedAt : (isQcRejected ? qcRecord?.rejectedAt || so.updatedAt : null));
- const readyTime = (so as any)?.deliveryInitiatedAt || (isReady ? so.updatedAt : null);
- const deliveredTime = (so as any)?.deliveredAt || (isDelivered ? so.updatedAt : null);
+ const completedTime = (so as any)?.completedAt || (isCompleted ? so.updatedAt : null);
 
  return [
   {
@@ -256,8 +238,8 @@ function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): Timel
    title: 'Accepted & Processing',
    description: isInProcess ? 'Garments in processing' : 'Partner to accept order',
    timeframe: isInProcess ? fmt(acceptedTime) : undefined,
-   status: (isQcSubmitted || isQcApproved || isReady || isDelivered) ? 'COMPLETED' : isInProcess ? 'IN_PROGRESS' : 'PENDING',
-   badgeText: (isQcSubmitted || isQcApproved || isReady || isDelivered) ? 'Done' : isInProcess ? 'In Progress' : 'Pending',
+   status: (isQcSubmitted || isQcApproved || isCompleted) ? 'COMPLETED' : isInProcess ? 'IN_PROGRESS' : 'PENDING',
+   badgeText: (isQcSubmitted || isQcApproved || isCompleted) ? 'Done' : isInProcess ? 'In Progress' : 'Pending',
   },
   {
    id: 'qc_submitted',
@@ -265,8 +247,8 @@ function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): Timel
    title: 'QC Submitted',
    description: isQcSubmitted ? (qcRecord?.photos?.length ? `${qcRecord.photos.length} photos uploaded` : 'Inspection submitted') : 'Pending inspection',
    timeframe: isQcSubmitted ? fmt(qcSubmittedTime) : undefined,
-   status: (isQcApproved || isReady || isDelivered) ? 'COMPLETED' : isQcSubmitted ? 'IN_PROGRESS' : 'PENDING',
-   badgeText: (isQcApproved || isReady || isDelivered) ? 'Done' : isQcSubmitted ? 'Under Review' : 'Pending',
+   status: (isQcApproved || isCompleted) ? 'COMPLETED' : isQcSubmitted ? 'IN_PROGRESS' : 'PENDING',
+   badgeText: (isQcApproved || isCompleted) ? 'Done' : isQcSubmitted ? 'Under Review' : 'Pending',
   },
   {
    id: 'qc_verified',
@@ -278,31 +260,19 @@ function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): Timel
    badgeText: isQcRejected ? 'Rejected' : isQcApproved ? 'Approved' : isQcSubmitted ? 'Reviewing' : 'Pending',
   },
   {
-   id: 'ready_delivery',
+   id: 'completed',
    stepNum: 5,
-   title: 'Ready to Deliver',
-   description: isReady ? 'Packed & ready for dispatch' : 'Pending QC completion',
-   timeframe: isReady ? fmt(readyTime) : undefined,
-   status: isDelivered ? 'COMPLETED' : isReady ? 'IN_PROGRESS' : 'PENDING',
-   badgeText: isDelivered ? 'Done' : isReady ? 'Ready' : 'Pending',
-  },
-  {
-   id: 'delivered',
-   stepNum: 6,
-   title: 'Delivered',
-   description: isDelivered ? 'Delivered to customer' : 'Customer delivery pending',
-   timeframe: isDelivered ? fmt(deliveredTime) : undefined,
-   status: isDelivered ? 'COMPLETED' : 'PENDING',
-   badgeText: isDelivered ? 'Delivered' : 'Pending',
+   title: 'Completed',
+   description: isCompleted ? 'Partner processing completed' : 'Pending QC completion',
+   timeframe: isCompleted ? fmt(completedTime) : undefined,
+   status: isCompleted ? 'COMPLETED' : 'PENDING',
+   badgeText: isCompleted ? 'Completed' : 'Pending',
   },
  ];
 }
 
 function deriveStatus(order: Order, subs: SubOrder[]): string {
  const oStatus = (order.status || '').toUpperCase();
- const oDeliv = ((order as any).deliveryStatus || (order as any).delivery_status || '').toUpperCase();
- if (oStatus === 'READY_FOR_DELIVERY' || oDeliv === 'READY_FOR_DELIVERY') return 'READY_FOR_DELIVERY';
- if (subs.some(s => (s.status || '').toUpperCase() === 'READY_FOR_DELIVERY' || ((s as any).deliveryStatus || '').toUpperCase() === 'READY_FOR_DELIVERY')) return 'READY_FOR_DELIVERY';
 
  // If any sub is QC rejected -> show QC_REJECTED
  if (oStatus === 'QC_REJECTED' || subs.some(s => (s.status || '').toUpperCase() === 'QC_REJECTED')) return 'QC_REJECTED';
@@ -311,10 +281,11 @@ function deriveStatus(order: Order, subs: SubOrder[]): string {
   const st = (s.status || '').toUpperCase();
   return st === 'QC_PENDING' || st === 'QC_SENT';
  })) return 'QC_PENDING';
- // If all subs QC approved or order is QC_APPROVED -> QC_APPROVED
- if (oStatus === 'QC_APPROVED' || (subs.length > 0 && subs.every(s => (s.status || '').toUpperCase() === 'QC_APPROVED'))) return 'QC_APPROVED';
- // If all subs completed -> show COMPLETED
- if (oStatus === 'COMPLETED' || oStatus === 'DELIVERED' || (subs.length > 0 && subs.every(s => (s.status || '').toUpperCase() === 'COMPLETED' || (s.status || '').toUpperCase() === 'DELIVERED'))) return 'COMPLETED';
+ // If all subs completed (or QC approved / ready / delivered) -> show COMPLETED
+ if (oStatus === 'COMPLETED' || oStatus === 'DELIVERED' || oStatus === 'READY_FOR_DELIVERY' || oStatus === 'QC_APPROVED' || (subs.length > 0 && subs.every(s => {
+  const st = (s.status || '').toUpperCase();
+  return st === 'COMPLETED' || st === 'DELIVERED' || st === 'READY_FOR_DELIVERY' || st === 'QC_APPROVED';
+ }))) return 'COMPLETED';
  // If any sub is in progress or completed while others pending -> show IN_PROCESS
  if (oStatus === 'IN_PROCESS' || subs.some(s => {
   const st = (s.status || '').toUpperCase();
@@ -891,9 +862,7 @@ export default function OrdersPage() {
    const subs = subOrdersByOrder.get(displayId) || [];
    const st = deriveStatus(o, subs);
    counts[st] = (counts[st] || 0) + 1;
-   if (st === 'READY_FOR_DELIVERY' || o.deliveryStatus === 'READY_FOR_DELIVERY') {
-    counts['READY_FOR_DELIVERY'] = (counts['READY_FOR_DELIVERY'] || 0) + 1;
-   }
+   
   });
   return counts;
  }, [orders, subOrdersByOrder]);
@@ -934,11 +903,8 @@ export default function OrdersPage() {
      { label: 'In Progress', value: 'IN_PROCESS' },
      { label: 'QC Pending', value: 'QC_PENDING' },
      { label: 'QC Approved', value: 'QC_APPROVED' },
-     { label: 'Ready to Deliver', value: 'READY_FOR_DELIVERY' },
      { label: 'QC Rejected', value: 'QC_REJECTED' },
-     { label: 'Rejected', value: 'REJECTED' },
      { label: 'Completed', value: 'COMPLETED' },
-     { label: 'Delivered', value: 'DELIVERED' },
     ].map(chip => {
      const count = statusCounts[chip.value] ?? (chip.value === '' ? orders.length : 0);
      const isActive = statusFilter === chip.value;
@@ -1028,7 +994,7 @@ export default function OrdersPage() {
       minWidth: 150
      }}
     >
-     {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s === 'READY_FOR_DELIVERY' ? 'Ready to Deliver' : s === 'QC_APPROVED' ? 'QC Approved' : s === 'QC_PENDING' ? 'QC Pending' : s === 'IN_PROCESS' ? 'In Progress' : s || 'All Statuses'}</option>)}
+     {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s === 'QC_APPROVED' ? 'QC Approved' : s === 'QC_PENDING' ? 'QC Pending' : s === 'IN_PROCESS' ? 'In Progress' : s || 'All Statuses'}</option>)}
     </select>
    </div>
 

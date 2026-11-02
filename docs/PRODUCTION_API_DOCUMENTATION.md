@@ -42,11 +42,10 @@ sequenceDiagram
     Partner->>OpsServer: GET /api/partners/:partnerId/sub-orders (Fetch assigned work orders)
     Partner->>OpsServer: POST /api/orders/:id/accept (Status -> IN_PROCESS)
     Partner->>OpsServer: POST /api/orders/:id/qc/submit (Submit garment QC)
-    OpsServer->>OpsServer: QC Approved by Admin (Status -> READY_TO_DELIVER)
-    Partner->>OpsServer: POST /api/orders/:id/delivery/initiate (Status -> DELIVERED)
+    OpsServer->>OpsServer: QC Approved by Admin (Status -> COMPLETED)
 
     Note over OpsServer,Customer: Step 5: Final Status Push
-    OpsServer->>Customer: POST {CUSTOMER_APP_URL}/api/orders/:id/status (Status -> DELIVERED)
+    OpsServer->>Customer: POST {CUSTOMER_APP_URL}/api/orders/:id/status (Status -> COMPLETED)
 ```
 
 ---
@@ -460,7 +459,7 @@ Submits inspection results, garment quality scores, and photos:
 }
 ```
 
-### 4.4 Admin Approves QC
+### 4.4 Admin Approves QC (Completes Order)
 * **Method**: `POST`
 * **URL**: `https://amaze-ops.web.app/api/orders/{subOrderNumber}/qc/approve`
 * **Response**:
@@ -469,16 +468,16 @@ Submits inspection results, garment quality scores, and photos:
   "success": true,
   "mainOrderNumber": "ORD-1793308518124",
   "subOrderId": "ORD-1793308518124-GP01-1",
-  "status": "READY_TO_DELIVER",
-  "overallStatus": "READY_TO_DELIVER",
+  "status": "COMPLETED",
+  "overallStatus": "COMPLETED",
   "updatedSubOrder": {
     "subOrderNumber": "ORD-1793308518124-GP01-1",
-    "status": "READY_TO_DELIVER"
+    "status": "COMPLETED"
   },
   "totalSubOrders": 3,
   "subOrders": [ ... ],
   "customerAppNotified": true,
-  "message": "QC approved"
+  "message": "QC approved - Order completed"
 }
 ```
 

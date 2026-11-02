@@ -162,12 +162,12 @@ export async function fetchOrdersByPartner(partnerId) {
    ));
    const allPassed = garments.length > 0 && garments.every(g => g.qcStatus === 'QC_PASSED') && !hasAnyRejection;
 
-   const isReadyForDelivery = sub.status === 'READY_FOR_DELIVERY' || sub.deliveryStatus === 'READY_FOR_DELIVERY' || parent.status === 'READY_FOR_DELIVERY' || parent.deliveryStatus === 'READY_FOR_DELIVERY';
-   const isQcRej = !isReadyForDelivery && (qcStatus === 'QC_REJECTED' || sub.status === 'QC_REJECTED' || parent.status === 'QC_REJECTED' || hasAnyRejection || !!sub.rejectionReason || !!qc?.rejectionReason);
-   const isQcApp = !isReadyForDelivery && !isQcRej && (qcStatus === 'QC_APPROVED' || sub.status === 'QC_APPROVED' || parent.status === 'QC_APPROVED' || parent.qcStatus === 'QC_APPROVED' || allPassed);
-   const isQcPen = !isReadyForDelivery && !isQcApp && !isQcRej && (qcStatus === 'QC_PENDING' || sub.status === 'QC_SENT');
-   const subStatus = isReadyForDelivery ? 'READY_FOR_DELIVERY' : isQcRej ? 'QC_REJECTED' : isQcApp ? 'QC_APPROVED' : isQcPen ? 'QC_SENT' : sub.status;
-   const finalQcStatus = isReadyForDelivery ? 'QC_APPROVED' : isQcRej ? 'QC_REJECTED' : isQcApp ? 'QC_APPROVED' : qcStatus;
+   const isCompleted = sub.status === 'COMPLETED' || sub.status === 'DELIVERED' || sub.status === 'READY_FOR_DELIVERY' || parent.status === 'COMPLETED' || parent.status === 'DELIVERED';
+    const isQcRej = !isCompleted && (qcStatus === 'QC_REJECTED' || sub.status === 'QC_REJECTED' || parent.status === 'QC_REJECTED' || hasAnyRejection || !!sub.rejectionReason || !!qc?.rejectionReason);
+    const isQcApp = !isCompleted && !isQcRej && (qcStatus === 'QC_APPROVED' || sub.status === 'QC_APPROVED' || parent.status === 'QC_APPROVED' || parent.qcStatus === 'QC_APPROVED' || allPassed);
+    const isQcPen = !isCompleted && !isQcApp && !isQcRej && (qcStatus === 'QC_PENDING' || sub.status === 'QC_SENT');
+    const subStatus = (isCompleted || isQcApp) ? 'COMPLETED' : isQcRej ? 'QC_REJECTED' : isQcPen ? 'QC_SENT' : sub.status;
+    const finalQcStatus = (isCompleted || isQcApp) ? 'QC_APPROVED' : isQcRej ? 'QC_REJECTED' : qcStatus;
 
    const qcRejection = isQcApp ? null : ((qc?.rejectionReason ? {
     reason: qc.rejectionReason,

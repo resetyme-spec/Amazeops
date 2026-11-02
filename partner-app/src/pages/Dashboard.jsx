@@ -96,7 +96,7 @@ export default function Dashboard() {
   qcPending: orders.filter(o => o.qcStatus === 'QC_PENDING').length,
   qcRejected: orders.filter(o => o.qcStatus === 'QC_REJECTED').length,
   qcApproved: orders.filter(o => o.qcStatus === 'QC_APPROVED').length,
-  deliveryPending: orders.filter(o => o.qcStatus === 'QC_APPROVED' && (!o.deliveryStatus || o.deliveryStatus === 'PENDING')).length,
+  completed: orders.filter(o => o.status === 'COMPLETED' || o.qcStatus === 'QC_APPROVED').length,
  };
 
  const todayNew = orders.filter(o => {
@@ -146,7 +146,7 @@ export default function Dashboard() {
    <StatCard label="QC PENDING" value={stats.qcPending} icon={ShieldCheck} gradient="linear-gradient(135deg,#3b82f6,#2563eb)" link="/orders" count="QC PENDING" />
    <StatCard label="QC REJECTED" value={stats.qcRejected} icon={ShieldAlert} gradient="linear-gradient(135deg,#ef4444,#dc2626)" link="/orders" count="REJECTED" />
    <StatCard label="QC APPROVED" value={stats.qcApproved} icon={CheckCircle2} gradient="linear-gradient(135deg,#22c55e,#16a34a)" link="/orders" count="QC APPROVED" />
-   <StatCard label="DELIVERY" value={stats.deliveryPending} icon={Truck} gradient="linear-gradient(135deg,#a855f7,#7c3aed)" link="/orders" count="PENDING" />
+   <StatCard label="COMPLETED" value={stats.completed} icon={CheckCircle2} gradient="linear-gradient(135deg,#10b981,#059669)" link="/orders?status=COMPLETED" count="COMPLETED" />
   </div>
 
   <div style={{ padding: '0 16px 20px' }}>
