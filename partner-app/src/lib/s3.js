@@ -11,14 +11,21 @@ const s3Client = new S3Client({
   },
 });
 
+export const S3_FOLDERS = {
+  QC: 'QC',
+  CRITICAL: 'Critical',
+  PLANT: 'Plant',
+  WARDROBE: 'Wardrobe',
+};
+
 /**
  * Upload a File object to AWS S3 and return the permanent public URL
  * @param {File} file - Browser File object
- * @param {string} folder - Destination folder (e.g. 'qc-photos', 'defect-photos')
+ * @param {string} folder - Destination folder (e.g. 'QC', 'Critical', 'Plant', 'Wardrobe')
  * @param {string} prefix - Custom filename prefix (e.g. 'ORD-123_garment1_front')
  * @returns {Promise<string>} Public HTTPS S3 URL
  */
-export async function uploadToS3(file, folder = 'qc-photos', prefix = '') {
+export async function uploadToS3(file, folder = S3_FOLDERS.QC, prefix = '') {
   if (!file) throw new Error('No file provided for upload');
 
   const ext = (file.name || 'image.jpg').split('.').pop() || 'jpg';

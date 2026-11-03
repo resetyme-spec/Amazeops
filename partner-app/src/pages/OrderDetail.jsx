@@ -9,7 +9,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery } from '../lib/api';
-import { uploadToS3 } from '../lib/s3';
+import { uploadToS3, S3_FOLDERS } from '../lib/s3';
 
 // Care Categories: Signature (Gold), Pristine (Orange), Premium (Blue)
 const TIER_COLORS = {
@@ -182,7 +182,7 @@ export default function OrderDetail() {
     setUploadingSlots(prev => ({ ...prev, [slotKey]: true }));
     setError('');
     try {
-      const s3Url = await uploadToS3(file, 'qc-photos', `${id}_${garmentId}_${slot}`);
+      const s3Url = await uploadToS3(file, S3_FOLDERS.QC, `${id}_${garmentId}_${slot}`);
       setQcForm(prev => {
         const current = prev[garmentId] || { brand: '', comments: '', photos: {} };
         return {
@@ -233,7 +233,7 @@ export default function OrderDetail() {
     try {
       const uploadPromises = fileList.map(async (file, idx) => {
         const slot = targetSlots[idx] || slots[idx];
-        const s3Url = await uploadToS3(file, 'qc-photos', `${id}_${garmentId}_${slot}`);
+        const s3Url = await uploadToS3(file, S3_FOLDERS.QC, `${id}_${garmentId}_${slot}`);
         return { slot, s3Url };
       });
 
@@ -356,7 +356,7 @@ export default function OrderDetail() {
     setError('');
     try {
       const garmentId = reQcModal.garment?.garmentId || 'garment';
-      const s3Url = await uploadToS3(file, 'qc-photos', `${id}_reQC_${garmentId}_${slot}`);
+      const s3Url = await uploadToS3(file, S3_FOLDERS.QC, `${id}_reQC_${garmentId}_${slot}`);
       setReQcModal(prev => ({
         ...prev,
         photos: {
@@ -402,7 +402,7 @@ export default function OrderDetail() {
       const garmentId = reQcModal.garment?.garmentId || 'garment';
       const uploadPromises = fileList.map(async (file, idx) => {
         const slot = targetSlots[idx] || slots[idx];
-        const s3Url = await uploadToS3(file, 'qc-photos', `${id}_reQC_${garmentId}_${slot}`);
+        const s3Url = await uploadToS3(file, S3_FOLDERS.QC, `${id}_reQC_${garmentId}_${slot}`);
         return { slot, s3Url };
       });
 
@@ -436,7 +436,7 @@ export default function OrderDetail() {
     setError('');
     try {
       const garmentId = criticalModal.garment?.garmentId || 'garment';
-      const s3Url = await uploadToS3(file, 'critical-photos', `${id}_critical_${garmentId}_${index + 1}`);
+      const s3Url = await uploadToS3(file, S3_FOLDERS.CRITICAL, `${id}_critical_${garmentId}_${index + 1}`);
       setCriticalPhotos(prev => {
         const next = [...prev];
         next[index] = s3Url;
