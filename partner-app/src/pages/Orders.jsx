@@ -182,11 +182,17 @@ export default function Orders() {
     key: 'COMPLETED',
     label: 'COMPLETED',
     badgeClass: 'status-approved',
+    headerBg: '#15803d',
+    bodyBg: '#f0fdf4',
     borderColor: '#86efac',
-    headerBg: '#f0fdf4',
-    customerColor: '#166534',
+    customerColor: '#14532d',
+    accentColor: '#16a34a',
+    badgeBg: 'rgba(255, 255, 255, 0.22)',
+    badgeColor: '#ffffff',
+    badgeBorder: 'rgba(255, 255, 255, 0.45)',
     partnerBadgeBg: '#dcfce7',
     partnerBadgeColor: '#15803d',
+    Icon: CheckCircle2,
     showAccept: false,
     showQc: false,
     showDelivery: false,
@@ -205,22 +211,6 @@ export default function Orders() {
     badgeColor: '#ffffff',
     badgeBorder: 'rgba(255, 255, 255, 0.45)',
     Icon: AlertTriangle,
-   };
-  }
-
-  if (isQcApp) {
-   return {
-    key: 'QC_APPROVED',
-    label: 'QC APPROVED',
-    headerBg: '#15803d',
-    bodyBg: '#f0fdf4',
-    borderColor: '#86efac',
-    customerColor: '#14532d',
-    accentColor: '#16a34a',
-    badgeBg: 'rgba(255, 255, 255, 0.22)',
-    badgeColor: '#ffffff',
-    badgeBorder: 'rgba(255, 255, 255, 0.45)',
-    Icon: CheckCircle2,
    };
   }
 
@@ -405,8 +395,7 @@ export default function Orders() {
  const StatusIcon = theme.Icon;
  const garmentCount = order.garments?.length || 0;
  const date = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—';
- const isQcApp = (order.qcStatus === 'QC_APPROVED' || order.status === 'QC_APPROVED') && order.status !== 'READY_FOR_DELIVERY' && order.deliveryStatus !== 'READY_FOR_DELIVERY' && order.status !== 'DELIVERED' && order.status !== 'COMPLETED';
-
+ 
  return (
  <div
   key={order.id}
@@ -529,31 +518,7 @@ export default function Orders() {
       <CheckCircle2 size={15} /> {acceptingId === order.id ? 'Accepting...' : 'Accept'}
      </button>
     )}
-    {isQcApp && (
-     <button
-      className="btn-accept-sm"
-      style={{
-       background: '#047857',
-       border: '1px solid #065f46',
-       color: '#ffffff',
-       display: 'inline-flex',
-       alignItems: 'center',
-       gap: 5,
-       padding: '6px 14px',
-       fontSize: 12,
-       fontWeight: 700,
-       borderRadius: 8,
-       cursor: 'pointer',
-       boxShadow: '0 1px 3px rgba(4,120,87,0.3)',
-      }}
-      onClick={(e) => { e.preventDefault(); handleQuickInitiateDelivery(order.id); }}
-      disabled={deliveringId === order.id}
-      title="Initiate delivery"
-     >
-      <Truck size={14} className={deliveringId === order.id ? 'spinning' : ''} />
-      {deliveringId === order.id ? 'Initiating...' : 'Initiate Delivery'}
-     </button>
-    )}
+    
     <button
      className="btn-view"
      style={{
