@@ -48,6 +48,22 @@ export default function PartnerInvoices() {
     loadData();
   }, [user?.id]);
 
+  if (user?.isStaff && !user?.canViewInvoices) {
+    return (
+      <div className="orders-screen" style={{ padding: 24, textAlign: 'center' }}>
+        <div style={{ marginTop: 60 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: '#1e293b' }}>Access Restricted</h2>
+          <p style={{ color: '#64748b', fontSize: 13, marginTop: 8 }}>
+            Your staff account does not have permission to view partner invoices.
+          </p>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/orders')}>
+            Return to Orders
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const totalEarned = invoices.reduce((s, i) => s + (i.total || 0), 0);
   const totalPaid = invoices.filter(i => i.status === 'PAID').reduce((s, i) => s + (i.total || 0), 0);
   const pendingAmount = invoices.filter(i => i.status !== 'PAID').reduce((s, i) => s + (i.total || 0), 0);

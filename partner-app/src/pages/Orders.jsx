@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Package, Clock, Search, RefreshCw, Eye, X, Shirt, CheckCircle2, Truck, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchOrdersByPartner, acceptOrder, initiateDelivery, subscribeToPartnerOrders } from '../lib/api';
+import {
+  fetchOrdersByPartner,
+  fetchOrdersForStaff,
+  fetchPartnersList,
+  acceptOrder,
+  initiateDelivery,
+  subscribeToPartnerOrders
+} from '../lib/api';
 
 const TIER_COLORS = {
   SIGNATURE: '#d97706',
@@ -104,15 +111,28 @@ export default function Orders() {
  const [viewModal, setViewModal] = useState({ open: false, order: null });
  const [acceptingId, setAcceptingId] = useState(null);
  const [deliveringId, setDeliveringId] = useState(null);
+ const [partnersList, setPartnersList] = useState([]);
+ const [selectedPartnerId, setSelectedPartnerId] = useState('');
 
  const statusFilter = searchParams.get('status') || '';
 
+ useEffect(() => {
+  if (user?.isStaff || user?.isAdmin) {
+   fetchPartnersList().then(setPartnersList);
+  }
+ }, [user?.isStaff, user?.isAdmin]);
+
  const load = async (isRefresh = false) => {
- if (!user) return;
- if (isRefresh) setRefreshing(true); else setLoading(true);
- const data = await fetchOrdersByPartner(user.id);
- setOrders(data);
- if (isRefresh) setRefreshing(false); else setLoading(false);
+  if (!user) return;
+  if (isRefresh) setRefreshing(true); else setLoading(true);
+  let data = [];
+  if (user.isStaff || user.isAdmin) {
+   data = await fetchOrdersForStaff(user, selectedPartnerId);
+  } else {
+   data = await fetchOrdersByPartner(user.id);
+  }
+  setOrders(data);
+  if (isRefresh) setRefreshing(false); else setLoading(false);
  };
 
  useEffect(() => {
@@ -123,7 +143,7 @@ export default function Orders() {
    onUpdate: () => load(true),
   });
   return () => { if (unsub) unsub(); };
- }, [user?.id, statusFilter]);
+ }, [user?.id, statusFilter, selectedPartnerId]);
 
  const filtered = orders.filter(o => {
   if (statusFilter) {
@@ -306,9 +326,46 @@ export default function Orders() {
  return (
  <div className="orders-screen">
  <header className="screen-header">
- <h1>Orders</h1>
- <button className="icon-btn" onClick={() => load(true)} disabled={refreshing}><RefreshCw size={18} className={refreshing ? 'spinning' : ''} /></button>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+   <h1 style={{ margin: 0 }}>Orders</h1>
+   {user?.isStaff && (
+    <span style={{ fontSize: 11, background: '#4f46e5', color: '#fff', padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>
+     STAFF {user.canApproveQc ? '· QC' : ''} {user.canViewInvoices ? '· INVOICES' : ''}
+    </span>
+   )}
+  </div>
+  <button className="icon-btn" onClick={() => load(true)} disabled={refreshing}><RefreshCw size={18} className={refreshing ? 'spinning' : ''} /></button>
  </header>
+
+ {/* Staff Partner Switcher */}
+ {(user?.isStaff || user?.isAdmin) && partnersList.length > 0 && (
+  <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+   <span style={{ fontSize: 12, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>Filter Partner:</span>
+   <select
+    value={selectedPartnerId}
+    onChange={e => setSelectedPartnerId(e.target.value)}
+    style={{
+     flex: 1,
+     padding: '7px 10px',
+     borderRadius: 8,
+     border: '1px solid #cbd5e1',
+     fontSize: 13,
+     fontWeight: 600,
+     background: '#fff',
+     color: '#1e293b',
+     outline: 'none',
+     boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+    }}
+   >
+    <option value="">All Partners ({partnersList.length})</option>
+    {partnersList.map(p => (
+     <option key={p.id} value={p.id}>
+      {p.name} {p.hubCode ? `(${p.hubCode})` : ''}
+     </option>
+    ))}
+   </select>
+  </div>
+ )}
 
  <div style={{ display: 'flex', gap: 8, padding: '0 16px 12px', overflowX: 'auto' }}>
   <StatCard

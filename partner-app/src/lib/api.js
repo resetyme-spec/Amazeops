@@ -2,7 +2,8 @@
 // Syncs order status back to the main API so admin panel reflects changes
 
 import { db, auth } from './firebase';
-import { collection, doc, getDoc, query, where, orderBy, getDocs, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, query, where, orderBy, getDocs, setDoc, updateDoc, onSnapshot, limit } from 'firebase/firestore';
+import { logStaffActivity } from './audit';
 
 const SETTINGS_DOC = 'settings/integrations';
 
@@ -962,4 +963,378 @@ export async function fetchInvoicesByPartner(uid) {
       return [];
     }
   }
+}
+
+// ===== STAFF OPERATIONS & AUDIT TRAIL =====
+
+/**
+ * Fetch all active laundry partners for Staff partner-switcher
+ */
+export async function fetchPartnersList() {
+  try {
+    const snap = await getDocs(collection(db, 'partners'));
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return list;
+  } catch (e) {
+    console.warn('fetchPartnersList error:', e);
+    return [];
+  }
+}
+
+/**
+ * Fetch orders for staff users across assigned partners or selected partner
+ */
+export async function fetchOrdersForStaff(actor, selectedPartnerId = '') {
+  try {
+    let q;
+    if (selectedPartnerId) {
+      q = query(collection(db, 'subOrders'), where('partnerId', '==', selectedPartnerId), orderBy('createdAt', 'desc'), limit(50));
+    } else if (actor.assignedPartners && actor.assignedPartners.length > 0 && !actor.assignedPartners.includes('*')) {
+      q = query(collection(db, 'subOrders'), where('partnerId', 'in', actor.assignedPartners.slice(0, 10)), orderBy('createdAt', 'desc'), limit(50));
+    } else {
+      q = query(collection(db, 'subOrders'), orderBy('createdAt', 'desc'), limit(50));
+    }
+
+    const snap = await getDocs(q);
+    const subOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (subOrders.length === 0) return [];
+
+    // Fetch parent orders for context
+    const orderIds = [...new Set(subOrders.map(s => s.orderId).filter(Boolean))];
+    const ordersMap = {};
+    for (const oid of orderIds) {
+      try {
+        const osnap = await getDoc(doc(db, 'orders', oid));
+        if (osnap.exists()) ordersMap[osnap.id] = osnap.data();
+      } catch (e) { /* skip */ }
+    }
+
+    // Fetch QC records
+    const qcMap = {};
+    try {
+      const qcSnap = await getDocs(query(collection(db, 'qcRecords'), where('orderId', 'in', orderIds.slice(0, 10))));
+      qcSnap.docs.forEach(d => { qcMap[d.data().orderId] = d.data(); });
+    } catch (e) { /* skip */ }
+
+    return subOrders.map(sub => {
+      const parent = ordersMap[sub.orderId] || {};
+      const parentGarments = parent.garments || [];
+      const garments = sub.garmentIds && sub.garmentIds.length > 0
+        ? parentGarments.filter(g => sub.garmentIds.includes(g.garmentId || g.qrCode || g.id))
+        : parentGarments;
+
+      const qc = qcMap[sub.orderId];
+      const qcStatus = qc?.status || sub.qcStatus || (sub.status === 'QC_REJECTED' ? 'QC_REJECTED' : '');
+      const reasonText = qc?.rejectionReason || sub.rejectionReason || parent.rejectionReason || '';
+      const hasAnyRejection = garments.some(g => (
+        g.qcStatus === 'QC_REJECTED' ||
+        g.qcRejection ||
+        qc?.rejectedGarments?.[g.garmentId] ||
+        (reasonText && (reasonText.toLowerCase().includes(g.garmentId.toLowerCase()) || (g.qrCode && reasonText.toLowerCase().includes(g.qrCode.toLowerCase()))))
+      ));
+      const allPassed = garments.length > 0 && garments.every(g => g.qcStatus === 'QC_PASSED') && !hasAnyRejection;
+
+      const isCompleted = sub.status === 'COMPLETED' || sub.status === 'DELIVERED' || sub.status === 'READY_FOR_DELIVERY' || parent.status === 'COMPLETED' || parent.status === 'DELIVERED';
+      const isQcRej = !isCompleted && (qcStatus === 'QC_REJECTED' || sub.status === 'QC_REJECTED' || parent.status === 'QC_REJECTED' || hasAnyRejection || !!sub.rejectionReason || !!qc?.rejectionReason);
+      const isQcApp = !isCompleted && !isQcRej && (qcStatus === 'QC_APPROVED' || sub.status === 'QC_APPROVED' || parent.status === 'QC_APPROVED' || parent.qcStatus === 'QC_APPROVED' || allPassed);
+      const isQcPen = !isCompleted && !isQcApp && !isQcRej && (qcStatus === 'QC_PENDING' || sub.status === 'QC_SENT');
+      const subStatus = (isCompleted || isQcApp) ? 'COMPLETED' : isQcRej ? 'QC_REJECTED' : isQcPen ? 'QC_SENT' : sub.status;
+      const finalQcStatus = (isCompleted || isQcApp) ? 'QC_APPROVED' : isQcRej ? 'QC_REJECTED' : qcStatus;
+
+      return {
+        ...sub,
+        status: subStatus,
+        qcStatus: finalQcStatus,
+        customerName: parent.customerName || sub.customerName || 'Customer',
+        customerPhone: parent.customerPhone || sub.customerPhone || '',
+        careCategory: sub.careCategory || parent.careCategory || 'Standard',
+        garments,
+        garmentCount: garments.length || sub.garmentIds?.length || 0,
+        hubName: parent.hubName || sub.hubName || parent.hub?.name || sub.hub?.name || '',
+        hubCode: parent.hubCode || sub.hubCode || parent.hub?.code || sub.hub?.code || '',
+        hubAddress: parent.hubAddress || sub.hubAddress || parent.hub?.address || sub.hub?.address || '',
+        hubPhone: parent.hubPhone || sub.hubPhone || parent.hub?.phone || sub.hub?.phone || '',
+      };
+    });
+  } catch (e) {
+    console.error('fetchOrdersForStaff error:', e);
+    return [];
+  }
+}
+
+/**
+ * Staff approves QC for a partner sub-order.
+ * Sets status to COMPLETED, logs audit trail, and notifies order timeline.
+ */
+export async function staffApproveQC(subOrderId, actor, comment = '') {
+  if (!actor?.canApproveQc && actor?.role !== 'ADMIN') {
+    throw new Error('Access denied: You do not have QC Approval permission.');
+  }
+
+  const nowIso = new Date().toISOString();
+  let parentOrderId = subOrderId;
+  let subDoc = null;
+
+  try {
+    const subSnap = await getDoc(doc(db, 'subOrders', subOrderId));
+    if (subSnap.exists()) {
+      subDoc = { id: subSnap.id, ...subSnap.data() };
+      parentOrderId = subDoc.orderId || subOrderId;
+    }
+  } catch (e) { /* fallback */ }
+
+  // 1. Update subOrders document to COMPLETED & QC_APPROVED
+  try {
+    await updateDoc(doc(db, 'subOrders', subOrderId), {
+      status: 'COMPLETED',
+      qcStatus: 'QC_APPROVED',
+      qcApprovedBy: actor.name || 'Staff',
+      qcApprovedAt: nowIso,
+      qcComments: comment || 'QC Approved by Staff',
+      rejectionReason: '',
+      rejectionComments: '',
+      updatedAt: nowIso,
+    });
+  } catch (e) {
+    console.warn('Could not update subOrders on staffApproveQC:', e);
+  }
+
+  // 2. Update qcRecords document
+  try {
+    const qcSnap = await getDocs(query(collection(db, 'qcRecords'), where('orderId', 'in', [parentOrderId, subOrderId].filter(Boolean))));
+    if (!qcSnap.empty) {
+      await updateDoc(qcSnap.docs[0].ref, {
+        status: 'QC_APPROVED',
+        approvedBy: actor.name || 'Staff',
+        approvedAt: nowIso,
+        comments: comment || '',
+        rejectionReason: '',
+        rejectionComments: '',
+        updatedAt: nowIso,
+      });
+    }
+  } catch (e) { /* non-critical */ }
+
+  // 3. Update parent order in Firestore
+  try {
+    const parentRef = doc(db, 'orders', parentOrderId);
+    const parentSnap = await getDoc(parentRef);
+    if (parentSnap.exists()) {
+      // Check sibling sub-orders
+      const subsSnap = await getDocs(query(collection(db, 'subOrders'), where('orderId', '==', parentOrderId)));
+      const allSubs = subsSnap.docs.map(d => d.id === subOrderId ? { ...d.data(), status: 'COMPLETED', qcStatus: 'QC_APPROVED' } : d.data());
+      const allCompleted = allSubs.every(s => ['COMPLETED', 'DELIVERED', 'READY_FOR_DELIVERY', 'QC_APPROVED'].includes(String(s.status || '').toUpperCase()));
+
+      const pData = parentSnap.data();
+      const pGarments = (pData.garments || []).map(g => {
+        const isInThisSub = subDoc?.garmentIds?.includes(g.garmentId || g.qrCode || g.id);
+        if (isInThisSub) {
+          return { ...g, status: 'COMPLETED', qcStatus: 'QC_APPROVED' };
+        }
+        return g;
+      });
+
+      await updateDoc(parentRef, {
+        status: allCompleted ? 'COMPLETED' : (pData.status || 'IN_PROGRESS'),
+        qcStatus: allCompleted ? 'QC_APPROVED' : 'QC_IN_PROGRESS',
+        garments: pGarments,
+        updatedAt: nowIso,
+      });
+    }
+  } catch (e) {
+    console.warn('Could not update parent order on staffApproveQC:', e);
+  }
+
+  // 4. API fallback call
+  try {
+    await callApi(`/api/orders/${encodeURIComponent(parentOrderId)}/qc/approve`, {
+      method: 'POST',
+      body: JSON.stringify({
+        approvedBy: actor.name,
+        comments: comment,
+        subOrderId,
+        _actorId: actor.id,
+        _actorName: actor.name,
+        _actorRole: actor.role || 'STAFF',
+      }),
+    });
+  } catch (e) { /* fallback */ }
+
+  // 5. Write to central Audit Logs & Timeline
+  await logStaffActivity({
+    action: 'QC_APPROVED',
+    orderId: parentOrderId,
+    subOrderId,
+    partnerId: subDoc?.partnerId || null,
+    previousValue: subDoc?.qcStatus || 'QC_PENDING',
+    newValue: 'QC_APPROVED',
+    comments: comment || 'QC Approved by Staff',
+    metadata: {
+      subOrderId,
+      garmentCount: subDoc?.garmentIds?.length || 0,
+    },
+    actor,
+  });
+
+  return { success: true };
+}
+
+/**
+ * Staff rejects QC for a partner sub-order.
+ * Sets status to QC_REJECTED, logs audit trail with exact reasons.
+ */
+export async function staffRejectQC(subOrderId, actor, { reason, comments, rejectedGarments = {} }) {
+  if (!actor?.canApproveQc && actor?.role !== 'ADMIN') {
+    throw new Error('Access denied: You do not have QC Approval permission.');
+  }
+
+  const nowIso = new Date().toISOString();
+  let parentOrderId = subOrderId;
+  let subDoc = null;
+
+  try {
+    const subSnap = await getDoc(doc(db, 'subOrders', subOrderId));
+    if (subSnap.exists()) {
+      subDoc = { id: subSnap.id, ...subSnap.data() };
+      parentOrderId = subDoc.orderId || subOrderId;
+    }
+  } catch (e) { /* fallback */ }
+
+  const fullReason = [reason, comments].filter(Boolean).join(' — ') || 'QC Rejected by Staff';
+
+  // 1. Update subOrders document
+  try {
+    await updateDoc(doc(db, 'subOrders', subOrderId), {
+      status: 'QC_REJECTED',
+      qcStatus: 'QC_REJECTED',
+      rejectionReason: fullReason,
+      rejectionComments: comments || reason || '',
+      rejectedGarments,
+      qcRejectedBy: actor.name || 'Staff',
+      qcRejectedAt: nowIso,
+      updatedAt: nowIso,
+    });
+  } catch (e) {
+    console.warn('Could not update subOrders on staffRejectQC:', e);
+  }
+
+  // 2. Update qcRecords document
+  try {
+    const qcSnap = await getDocs(query(collection(db, 'qcRecords'), where('orderId', 'in', [parentOrderId, subOrderId].filter(Boolean))));
+    if (!qcSnap.empty) {
+      await updateDoc(qcSnap.docs[0].ref, {
+        status: 'QC_REJECTED',
+        rejectionReason: fullReason,
+        rejectionComments: comments || reason || '',
+        rejectedGarments,
+        rejectedBy: actor.name || 'Staff',
+        rejectedAt: nowIso,
+        updatedAt: nowIso,
+      });
+    }
+  } catch (e) { /* non-critical */ }
+
+  // 3. Update parent order in Firestore
+  try {
+    const parentRef = doc(db, 'orders', parentOrderId);
+    const parentSnap = await getDoc(parentRef);
+    if (parentSnap.exists()) {
+      const pData = parentSnap.data();
+      const pGarments = (pData.garments || []).map(g => {
+        const rejInfo = rejectedGarments[g.garmentId];
+        if (rejInfo) {
+          return {
+            ...g,
+            status: 'QC_REJECTED',
+            qcStatus: 'QC_REJECTED',
+            qcRejection: {
+              reason: rejInfo.reason || fullReason,
+              photos: rejInfo.photos || [],
+              rejectedBy: actor.name,
+              rejectedAt: nowIso,
+            },
+          };
+        }
+        return g;
+      });
+
+      await updateDoc(parentRef, {
+        status: 'QC_REJECTED',
+        qcStatus: 'QC_REJECTED',
+        rejectionReason: fullReason,
+        rejectionComments: comments || reason || '',
+        rejectedGarments,
+        garments: pGarments,
+        updatedAt: nowIso,
+      });
+    }
+  } catch (e) {
+    console.warn('Could not update parent order on staffRejectQC:', e);
+  }
+
+  // 4. API fallback call
+  try {
+    await callApi(`/api/orders/${encodeURIComponent(parentOrderId)}/qc/reject`, {
+      method: 'POST',
+      body: JSON.stringify({
+        reason: fullReason,
+        comments,
+        rejectedGarments,
+        subOrderId,
+        rejectedBy: actor.name,
+        _actorId: actor.id,
+        _actorName: actor.name,
+        _actorRole: actor.role || 'STAFF',
+      }),
+    });
+  } catch (e) { /* fallback */ }
+
+  // 5. Write to central Audit Logs & Timeline
+  await logStaffActivity({
+    action: 'QC_REJECTED',
+    orderId: parentOrderId,
+    subOrderId,
+    partnerId: subDoc?.partnerId || null,
+    previousValue: subDoc?.qcStatus || 'QC_PENDING',
+    newValue: 'QC_REJECTED',
+    comments: fullReason,
+    metadata: {
+      subOrderId,
+      rejectedGarments,
+    },
+    actor,
+  });
+
+  return { success: true };
+}
+
+/**
+ * Staff verifies or marks an invoice as checked
+ */
+export async function verifyInvoiceByStaff(invoiceId, actor, comments = '') {
+  if (!actor?.canViewInvoices && actor?.role !== 'ADMIN') {
+    throw new Error('Access denied: You do not have Invoice permissions.');
+  }
+
+  const nowIso = new Date().toISOString();
+  try {
+    await updateDoc(doc(db, 'invoices', invoiceId), {
+      verifiedBy: actor.name,
+      verifiedAt: nowIso,
+      auditComments: comments,
+      updatedAt: nowIso,
+    });
+  } catch (e) {
+    console.warn('Could not update invoice in Firestore:', e);
+  }
+
+  await logStaffActivity({
+    action: 'INVOICE_CHECKED',
+    metadata: { invoiceId },
+    comments: comments || `Invoice ${invoiceId} verified by ${actor.name}`,
+    actor,
+  });
+
+  return { success: true };
 }

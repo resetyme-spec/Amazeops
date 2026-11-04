@@ -3,12 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle2, XCircle, Truck, QrCode, Tag, MessageSquare,
   User, AlertTriangle, ImagePlus, X as XIcon, Camera, Upload, RefreshCw, Eye,
-  ChevronDown, ChevronUp, Star, Droplets, Sparkles, Building2, MapPin, Phone, Navigation
+  ChevronDown, ChevronUp, Star, Droplets, Sparkles, Building2, MapPin, Phone, Navigation, ShieldCheck
 } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery } from '../lib/api';
+import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery, staffApproveQC, staffRejectQC } from '../lib/api';
 import { uploadToS3, uploadGarmentQcPhoto, S3_FOLDERS } from '../lib/s3';
 
 // Care Categories: Signature (Gold), Pristine (Orange), Premium (Blue)
@@ -115,6 +115,12 @@ export default function OrderDetail() {
     stainTypes: []
   });
   const [reQcSubmitting, setReQcSubmitting] = useState(false);
+
+  // Staff QC Approval & Rejection states
+  const [staffRejectModal, setStaffRejectModal] = useState(false);
+  const [staffRejectReason, setStaffRejectReason] = useState('Quality standards not met');
+  const [staffRejectComments, setStaffRejectComments] = useState('');
+  const [staffSelectedGarments, setStaffSelectedGarments] = useState({});
 
   // Suggested Stain Type Master
   const [availableStainTypes, setAvailableStainTypes] = useState(SUGGESTED_STAIN_TYPES);
@@ -598,6 +604,61 @@ export default function OrderDetail() {
     setActionLoading(false);
   };
 
+  const handleStaffApproveQC = async () => {
+    if (!id || !user) return;
+    if (!window.confirm('Are you sure you want to approve this QC submission? The order will be marked as COMPLETED.')) return;
+    setActionLoading(true);
+    setError('');
+    try {
+      await staffApproveQC(id, user, 'Approved by staff in portal');
+      setSuccessBanner('✓ QC Approved successfully! Order is now COMPLETED.');
+      await load();
+    } catch (e) {
+      setError(e.message || 'Failed to approve QC');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleStaffRejectQC = async () => {
+    if (!id || !user) return;
+    if (!staffRejectComments.trim()) {
+      setError('Please provide comments explaining what needs rework.');
+      return;
+    }
+    setActionLoading(true);
+    setError('');
+    try {
+      const rejMap = {};
+      const selGarments = Object.keys(staffSelectedGarments).filter(gId => staffSelectedGarments[gId]);
+      const targetGarmentIds = selGarments.length > 0 ? selGarments : garments.map(g => g.garmentId);
+
+      targetGarmentIds.forEach(gId => {
+        rejMap[gId] = {
+          reason: `${staffRejectReason}: ${staffRejectComments}`,
+          rejectedBy: user.name,
+          rejectedAt: new Date().toISOString(),
+        };
+      });
+
+      await staffRejectQC(id, user, {
+        reason: staffRejectReason,
+        comments: staffRejectComments,
+        rejectedGarments: rejMap,
+      });
+
+      setStaffRejectModal(false);
+      setStaffRejectComments('');
+      setStaffSelectedGarments({});
+      setSuccessBanner('QC Rejected. Order returned to partner for rework.');
+      await load();
+    } catch (e) {
+      setError(e.message || 'Failed to reject QC');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   if (loading) return <div className="loading-screen"><div className="spinner-large" /></div>;
   if (!order) return <div className="empty-state"><p>Order not found</p><button className="btn btn-secondary" onClick={() => navigate('/orders')}>Back to Orders</button></div>;
 
@@ -893,6 +954,59 @@ export default function OrderDetail() {
         })}
       </div>
 
+      {/* Staff QC Action Bar */}
+      {user?.canApproveQc && !isCompleted && (
+        <div style={{ margin: '16px 0', background: '#ffffff', borderRadius: 16, border: '2px solid #6366f1', padding: 16, boxShadow: '0 8px 24px rgba(99, 102, 241, 0.12)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ShieldCheck size={20} color="#4f46e5" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 14, color: '#1e1b4b' }}>Staff QC Verification</div>
+              <div style={{ fontSize: 12, color: '#6366f1' }}>Inspect partner photos & approve or request rework</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              className="btn btn-full"
+              style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer' }}
+              onClick={() => {
+                const initSel = {};
+                garments.forEach(g => { initSel[g.garmentId] = true; });
+                setStaffSelectedGarments(initSel);
+                setStaffRejectModal(true);
+              }}
+              disabled={actionLoading}
+            >
+              <XCircle size={18} /> Reject QC
+            </button>
+            <button
+              className="btn btn-full"
+              style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer' }}
+              onClick={handleStaffApproveQC}
+              disabled={actionLoading}
+            >
+              <CheckCircle2 size={18} /> Approve QC
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Completed Status Notice */}
+      {isCompleted && (
+        <div style={{ margin: '16px 0', background: '#f0fdf4', borderRadius: 16, border: '1px solid #86efac', padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <CheckCircle2 size={24} color="#16a34a" />
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#14532d' }}>Order Completed & QC Approved</div>
+            {order.qcApprovedBy && (
+              <div style={{ fontSize: 12, color: '#166534', marginTop: 2 }}>
+                Approved by <b>{order.qcApprovedBy}</b> {order.qcApprovedAt ? `on ${new Date(order.qcApprovedAt).toLocaleDateString()} at ${new Date(order.qcApprovedAt).toLocaleTimeString()}` : ''}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Action Bar */}
       <div className="action-bar">
         {canAccept && (
@@ -906,9 +1020,105 @@ export default function OrderDetail() {
             <CheckCircle2 size={18} /> Submit for QC
           </button>
         )}
-
-        
       </div>
+
+      {/* Staff Rejection Modal */}
+      {staffRejectModal && (
+        <div className="modal-overlay" onClick={() => setStaffRejectModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="modal-header">
+              <h3><AlertTriangle size={18} color="#dc2626" /> Reject QC & Send for Rework</h3>
+              <button className="modal-close" onClick={() => setStaffRejectModal(false)}><XIcon size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Select Garments with Issues</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+                  {garments.map((g, idx) => {
+                    const isChecked = !!staffSelectedGarments[g.garmentId];
+                    return (
+                      <label
+                        key={g.garmentId}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '8px 12px',
+                          borderRadius: 8,
+                          background: isChecked ? '#fef2f2' : '#f8fafc',
+                          border: `1px solid ${isChecked ? '#fca5a5' : '#e2e8f0'}`,
+                          cursor: 'pointer',
+                          fontSize: 13,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={e => {
+                            setStaffSelectedGarments(prev => ({
+                              ...prev,
+                              [g.garmentId]: e.target.checked
+                            }));
+                          }}
+                        />
+                        <span style={{ fontWeight: 600 }}>#{idx + 1} {g.category || 'Garment'}</span>
+                        <span style={{ color: '#64748b', fontSize: 11 }}>({g.garmentId})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Primary Issue Category</label>
+                <select
+                  className="form-input"
+                  value={staffRejectReason}
+                  onChange={e => setStaffRejectReason(e.target.value)}
+                >
+                  <option value="Stain remaining on fabric">Stain remaining on fabric</option>
+                  <option value="Wrinkled / Poor finishing / Ironing">Wrinkled / Poor finishing / Ironing</option>
+                  <option value="Odor or fragrance issue">Odor or fragrance issue</option>
+                  <option value="Tag / Barcode damaged or missing">Tag / Barcode damaged or missing</option>
+                  <option value="Fabric damage or discoloration">Fabric damage or discoloration</option>
+                  <option value="Other quality defect">Other quality defect</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Specific Rework Instructions *</label>
+                <textarea
+                  className="form-input textarea"
+                  value={staffRejectComments}
+                  onChange={e => setStaffRejectComments(e.target.value)}
+                  placeholder="Detail the specific issue and instructions for the laundry partner to rectify..."
+                  rows={3}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-full"
+                  onClick={() => setStaffRejectModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-full"
+                  style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700 }}
+                  onClick={handleStaffRejectQC}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? <span className="spinner" /> : 'Confirm Rejection'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Critical Mark Modal */}
       {criticalModal.open && (
