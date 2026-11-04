@@ -619,6 +619,7 @@ export async function submitQC(orderId, garmentUpdates, actor, isReQC = false) {
        brand: upd.brand || g.brand,
        comments: upd.comments || g.comments,
        photos: upd.photos || g.photos,
+       wardrobePhotos: g.wardrobePhotos || upd.wardrobePhotos || null,
        garmentQuality: upd.garmentQuality !== undefined ? upd.garmentQuality : (g.garmentQuality || 5),
        solvents: upd.solvents || g.solvents || [],
        status: 'QC_PENDING',

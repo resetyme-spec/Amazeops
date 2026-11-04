@@ -9,7 +9,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery } from '../lib/api';
-import { uploadToS3, S3_FOLDERS } from '../lib/s3';
+import { uploadToS3, uploadGarmentQcPhoto, S3_FOLDERS } from '../lib/s3';
 
 // Care Categories: Signature (Gold), Pristine (Orange), Premium (Blue)
 const TIER_COLORS = {
@@ -182,17 +182,37 @@ export default function OrderDetail() {
     setUploadingSlots(prev => ({ ...prev, [slotKey]: true }));
     setError('');
     try {
-      const s3Url = await uploadToS3(file, S3_FOLDERS.QC, `${id}_${garmentId}_${slot}`);
+      const targetGarment = garments.find(g => g.garmentId === garmentId);
+      const hasExistingWardrobe = Boolean(
+        targetGarment?.wardrobePhotos?.[slot] ||
+        qcForm[garmentId]?.wardrobePhotos?.[slot] ||
+        targetGarment?.hasWardrobe
+      );
+
+      const { qcUrl, wardrobeUrl } = await uploadGarmentQcPhoto(file, {
+        orderId: id,
+        garmentId,
+        slot,
+        isReQC: false,
+        hasWardrobe: hasExistingWardrobe,
+      });
+
       setQcForm(prev => {
         const current = prev[garmentId] || { brand: '', comments: '', photos: {} };
+        const updatedWardrobePhotos = wardrobeUrl
+          ? { ...(current.wardrobePhotos || targetGarment?.wardrobePhotos || {}), [slot]: wardrobeUrl }
+          : (current.wardrobePhotos || targetGarment?.wardrobePhotos);
+
         return {
           ...prev,
           [garmentId]: {
             ...current,
             photos: {
               ...current.photos,
-              [slot]: s3Url,
+              [slot]: qcUrl,
             },
+            ...(updatedWardrobePhotos ? { wardrobePhotos: updatedWardrobePhotos } : {}),
+            isUpdated: true,
           },
         };
       });
@@ -231,26 +251,46 @@ export default function OrderDetail() {
     setError('');
 
     try {
+      const targetGarment = garments.find(g => g.garmentId === garmentId);
+
       const uploadPromises = fileList.map(async (file, idx) => {
         const slot = targetSlots[idx] || slots[idx];
-        const s3Url = await uploadToS3(file, S3_FOLDERS.QC, `${id}_${garmentId}_${slot}`);
-        return { slot, s3Url };
+        const hasExistingWardrobe = Boolean(
+          targetGarment?.wardrobePhotos?.[slot] ||
+          qcForm[garmentId]?.wardrobePhotos?.[slot] ||
+          targetGarment?.hasWardrobe
+        );
+
+        const { qcUrl, wardrobeUrl } = await uploadGarmentQcPhoto(file, {
+          orderId: id,
+          garmentId,
+          slot,
+          isReQC: false,
+          hasWardrobe: hasExistingWardrobe,
+        });
+
+        return { slot, qcUrl, wardrobeUrl };
       });
 
       const uploaded = await Promise.all(uploadPromises);
       setQcForm(prev => {
         const current = prev[garmentId] || { brand: '', comments: '', photos: {} };
         const updatedPhotos = { ...(current.photos || {}) };
-        uploaded.forEach(({ slot, s3Url }) => {
-          updatedPhotos[slot] = s3Url;
+        const updatedWardrobePhotos = { ...(current.wardrobePhotos || targetGarment?.wardrobePhotos || {}) };
+
+        uploaded.forEach(({ slot, qcUrl, wardrobeUrl }) => {
+          updatedPhotos[slot] = qcUrl;
+          if (wardrobeUrl) updatedWardrobePhotos[slot] = wardrobeUrl;
         });
+
         return {
           ...prev,
           [garmentId]: {
             ...current,
             photos: updatedPhotos,
-            isUpdated: true
-          }
+            ...(Object.keys(updatedWardrobePhotos).length > 0 ? { wardrobePhotos: updatedWardrobePhotos } : {}),
+            isUpdated: true,
+          },
         };
       });
     } catch (err) {
@@ -317,6 +357,7 @@ export default function OrderDetail() {
         brand: form.brand,
         comments: form.comments,
         photos: form.photos,
+        wardrobePhotos: form.wardrobePhotos || g.wardrobePhotos || null,
         garmentQuality: form.garmentQuality || 5,
         solvents: form.stainTypes || form.solvents || [],
         stainTypes: form.stainTypes || form.solvents || []
@@ -356,12 +397,18 @@ export default function OrderDetail() {
     setError('');
     try {
       const garmentId = reQcModal.garment?.garmentId || 'garment';
-      const s3Url = await uploadToS3(file, S3_FOLDERS.QC, `${id}_reQC_${garmentId}_${slot}`);
+      const { qcUrl } = await uploadGarmentQcPhoto(file, {
+        orderId: id,
+        garmentId,
+        slot,
+        isReQC: true, // Always true for rework/Re-QC: replaces in QC/, never touches Wardrobe/
+        hasWardrobe: true,
+      });
       setReQcModal(prev => ({
         ...prev,
         photos: {
           ...prev.photos,
-          [slot]: s3Url
+          [slot]: qcUrl
         }
       }));
     } catch (err) {
@@ -402,15 +449,21 @@ export default function OrderDetail() {
       const garmentId = reQcModal.garment?.garmentId || 'garment';
       const uploadPromises = fileList.map(async (file, idx) => {
         const slot = targetSlots[idx] || slots[idx];
-        const s3Url = await uploadToS3(file, S3_FOLDERS.QC, `${id}_reQC_${garmentId}_${slot}`);
-        return { slot, s3Url };
+        const { qcUrl } = await uploadGarmentQcPhoto(file, {
+          orderId: id,
+          garmentId,
+          slot,
+          isReQC: true, // Always true for rework/Re-QC
+          hasWardrobe: true,
+        });
+        return { slot, qcUrl };
       });
 
       const uploaded = await Promise.all(uploadPromises);
       setReQcModal(prev => {
         const updatedPhotos = { ...(prev.photos || {}) };
-        uploaded.forEach(({ slot, s3Url }) => {
-          updatedPhotos[slot] = s3Url;
+        uploaded.forEach(({ slot, qcUrl }) => {
+          updatedPhotos[slot] = qcUrl;
         });
         return {
           ...prev,
