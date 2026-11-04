@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Package, Clock, Search, RefreshCw, Eye, X, Shirt, CheckCircle2, Truck, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchOrdersByPartner, acceptOrder, initiateDelivery } from '../lib/api';
+import { fetchOrdersByPartner, acceptOrder, initiateDelivery, subscribeToPartnerOrders } from '../lib/api';
 
 const TIER_COLORS = {
   SIGNATURE: '#d97706',
@@ -115,7 +115,15 @@ export default function Orders() {
  if (isRefresh) setRefreshing(false); else setLoading(false);
  };
 
- useEffect(() => { load(); }, [user?.id, statusFilter]);
+ useEffect(() => {
+  load();
+  if (!user?.id) return;
+  const unsub = subscribeToPartnerOrders(user.id, {
+   onNewOrder: () => load(true),
+   onUpdate: () => load(true),
+  });
+  return () => { if (unsub) unsub(); };
+ }, [user?.id, statusFilter]);
 
  const filtered = orders.filter(o => {
   if (statusFilter) {

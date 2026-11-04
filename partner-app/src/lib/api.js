@@ -2,7 +2,7 @@
 // Syncs order status back to the main API so admin panel reflects changes
 
 import { db, auth } from './firebase';
-import { collection, doc, getDoc, query, where, orderBy, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, query, where, orderBy, getDocs, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 
 const SETTINGS_DOC = 'settings/integrations';
 
@@ -219,6 +219,63 @@ export async function fetchOrdersByPartner(partnerId) {
   console.error('fetchOrdersByPartner error:', e);
   return [];
  }
+}
+
+/**
+ * Real-time listener for orders assigned to this partner.
+ * Calls onNewOrder when an incoming order is assigned.
+ */
+export function subscribeToPartnerOrders(partnerId, { onInitial, onNewOrder, onUpdate }) {
+ let unsubscribeSnapshot = null;
+ let isInitial = true;
+ const knownOrderIds = new Set();
+
+ getFirestorePartnerId(partnerId).then(resolvedPartnerId => {
+  if (!resolvedPartnerId) return;
+
+  const q = query(
+   collection(db, 'subOrders'),
+   where('partnerId', '==', resolvedPartnerId)
+  );
+
+  unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+   const orders = [];
+   const newOrders = [];
+
+   snapshot.docs.forEach(d => {
+    const orderData = { id: d.id, ...d.data() };
+    orders.push(orderData);
+
+    const status = String(orderData.status || '').toUpperCase();
+    const isAssigned = ['ASSIGNED', 'RECEIVED', 'PENDING'].includes(status);
+
+    if (isInitial) {
+     knownOrderIds.add(orderData.id);
+    } else {
+     if (!knownOrderIds.has(orderData.id) && isAssigned) {
+      knownOrderIds.add(orderData.id);
+      newOrders.push(orderData);
+     }
+    }
+   });
+
+   if (isInitial) {
+    isInitial = false;
+    if (onInitial) onInitial(orders);
+   } else {
+    if (newOrders.length > 0 && onNewOrder) {
+     newOrders.forEach(o => onNewOrder(o));
+    }
+    if (onUpdate) onUpdate(orders);
+   }
+  }, (err) => {
+   console.error('[API] subscribeToPartnerOrders error:', err);
+  });
+ });
+
+ return () => {
+  if (unsubscribeSnapshot) unsubscribeSnapshot();
+ };
 }
 
 // Fetch single sub-order by document ID or orderId, merged with parent order data
