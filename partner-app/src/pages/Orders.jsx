@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Package, Clock, Search, RefreshCw, Eye, X, Shirt, CheckCircle2, Truck, AlertTriangle } from 'lucide-react';
+import { Package, Clock, Search, RefreshCw, Eye, X, Shirt, CheckCircle2, Truck, AlertTriangle, QrCode } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
   fetchOrdersByPartner,
   fetchOrdersForStaff,
   fetchPartnersList,
+  fetchGarmentLifetimeHistory,
   acceptOrder,
   initiateDelivery,
   subscribeToPartnerOrders
 } from '../lib/api';
+import QRScannerModal from '../components/QRScannerModal';
+import GarmentHistoryModal from '../components/GarmentHistoryModal';
 
 const TIER_COLORS = {
   SIGNATURE: '#d97706',
@@ -113,6 +116,20 @@ export default function Orders() {
  const [deliveringId, setDeliveringId] = useState(null);
  const [partnersList, setPartnersList] = useState([]);
  const [selectedPartnerId, setSelectedPartnerId] = useState('');
+ const [scannerOpen, setScannerOpen] = useState(false);
+ const [historyModal, setHistoryModal] = useState({ open: false, data: null, loading: false });
+
+ const handleScanSuccess = async (code) => {
+  setScannerOpen(false);
+  setHistoryModal({ open: true, data: null, loading: true });
+  try {
+   const hist = await fetchGarmentLifetimeHistory(code);
+   setHistoryModal({ open: true, data: hist, loading: false });
+  } catch (err) {
+   alert(`Could not load garment history: ${err.message}`);
+   setHistoryModal({ open: false, data: null, loading: false });
+  }
+ };
 
  const statusFilter = searchParams.get('status') || '';
 
@@ -334,7 +351,30 @@ export default function Orders() {
     </span>
    )}
   </div>
-  <button className="icon-btn" onClick={() => load(true)} disabled={refreshing}><RefreshCw size={18} className={refreshing ? 'spinning' : ''} /></button>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+   <button
+    onClick={() => setScannerOpen(true)}
+    style={{
+     display: 'flex',
+     alignItems: 'center',
+     gap: 6,
+     background: '#eef2ff',
+     color: '#4f46e5',
+     border: '1.5px solid #c7d2fe',
+     padding: '7px 12px',
+     borderRadius: 10,
+     fontSize: 13,
+     fontWeight: 700,
+     cursor: 'pointer',
+    }}
+    title="Scan garment QR tag"
+   >
+    <QrCode size={16} /> Scan Tag
+   </button>
+   <button className="icon-btn" onClick={() => load(true)} disabled={refreshing}>
+    <RefreshCw size={18} className={refreshing ? 'spinning' : ''} />
+   </button>
+  </div>
  </header>
 
  {/* Staff Partner Switcher */}
@@ -690,6 +730,18 @@ export default function Orders() {
  </div>
  </div>
  )}
- </div>
- );
+
+ <QRScannerModal
+  isOpen={scannerOpen}
+  onClose={() => setScannerOpen(false)}
+  onScanSuccess={handleScanSuccess}
+ />
+
+ <GarmentHistoryModal
+  isOpen={historyModal.open}
+  onClose={() => setHistoryModal({ open: false, data: null, loading: false })}
+  data={historyModal.data}
+ />
+</div>
+);
 }

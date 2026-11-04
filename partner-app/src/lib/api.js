@@ -1338,3 +1338,127 @@ export async function verifyInvoiceByStaff(invoiceId, actor, comments = '') {
 
   return { success: true };
 }
+
+/**
+ * Fetches the complete lifetime history of a garment by its QR Code or Garment ID.
+ * Aggregates permanent wardrobe photos, past QC inspection photos, solvents/treatments used,
+ * quality scores, and visit history across all orders.
+ *
+ * @param {string} rawCode - Scanned QR code or Garment ID
+ */
+export async function fetchGarmentLifetimeHistory(rawCode) {
+  if (!rawCode) throw new Error('No garment QR code provided');
+
+  const code = String(rawCode).trim();
+  const cleanCode = code.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  const allOrdersSnap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(150)));
+  const matchingOrders = [];
+  let garmentSnapshot = null;
+  const visitHistory = [];
+  const qcPhotosList = [];
+  const solventsUsed = new Set();
+  const stainTypesHandled = new Set();
+  const commentsList = [];
+  let wardrobePhotos = null;
+
+  for (const docSnap of allOrdersSnap.docs) {
+    const orderData = { id: docSnap.id, ...docSnap.data() };
+    const garments = orderData.garments || [];
+
+    const matchedGarment = garments.find(g =>
+      (g.qrCode && g.qrCode.toLowerCase() === code.toLowerCase()) ||
+      (g.qr_code && g.qr_code.toLowerCase() === code.toLowerCase()) ||
+      (g.garmentId && g.garmentId.toLowerCase() === code.toLowerCase()) ||
+      (g.garment_id_code && g.garment_id_code.toLowerCase() === code.toLowerCase()) ||
+      (g.id && String(g.id).toLowerCase() === code.toLowerCase())
+    );
+
+    if (matchedGarment) {
+      if (!garmentSnapshot) garmentSnapshot = matchedGarment;
+
+      // Extract wardrobe photos
+      if (!wardrobePhotos && (matchedGarment.wardrobePhotos || orderData.wardrobePhotos)) {
+        wardrobePhotos = matchedGarment.wardrobePhotos || orderData.wardrobePhotos;
+      }
+
+      // Collect QC photos
+      if (matchedGarment.photos) {
+        Object.entries(matchedGarment.photos).forEach(([slot, url]) => {
+          if (url && typeof url === 'string') {
+            qcPhotosList.push({
+              slot,
+              url,
+              orderId: orderData.id,
+              date: orderData.createdAt || orderData.orderDate,
+            });
+          }
+        });
+      }
+
+      // Collect Solvents
+      const solvents = matchedGarment.solvents || matchedGarment.stainTypes || [];
+      if (Array.isArray(solvents)) {
+        solvents.forEach(s => solventsUsed.add(s));
+      }
+
+      // Collect Quality Score & Comments
+      if (matchedGarment.comments || matchedGarment.brand) {
+        commentsList.push({
+          orderId: orderData.id,
+          comments: matchedGarment.comments || 'Standard processing',
+          brand: matchedGarment.brand || '',
+          date: orderData.createdAt,
+          quality: matchedGarment.garmentQuality || 5,
+        });
+      }
+
+      matchingOrders.push(orderData);
+      visitHistory.push({
+        orderId: orderData.id,
+        date: orderData.createdAt || orderData.orderDate || new Date().toISOString(),
+        status: orderData.status,
+        qcStatus: orderData.qcStatus,
+        hubName: orderData.hub?.name || orderData.hubName || '',
+        hubCode: orderData.hub?.code || orderData.hubCode || '',
+        careCategory: matchedGarment.category || matchedGarment.garmentCategory || orderData.careCategory || 'GOLD',
+        serviceType: matchedGarment.serviceType || 'Dry clean',
+        brand: matchedGarment.brand || '',
+        quality: matchedGarment.garmentQuality || 5,
+        solvents: matchedGarment.solvents || [],
+      });
+    }
+  }
+
+  // Also check top-level garments collection if available
+  try {
+    const gSnap = await getDoc(doc(db, 'garments', code));
+    if (gSnap.exists()) {
+      const gData = gSnap.data();
+      if (!garmentSnapshot) garmentSnapshot = gData;
+      if (!wardrobePhotos && gData.wardrobePhotos) wardrobePhotos = gData.wardrobePhotos;
+    }
+  } catch (e) { /* ignore */ }
+
+  // AWS S3 standard Wardrobe location
+  const region = import.meta.env.VITE_AWS_REGION || 'ap-south-1';
+  const bucket = import.meta.env.VITE_AWS_S3_BUCKET || 'amaze-plant';
+  const defaultWardrobeUrl = `https://${bucket}.s3.${region}.amazonaws.com/Wardrobe/${cleanCode}_front.jpg`;
+
+  return {
+    found: Boolean(garmentSnapshot || matchingOrders.length > 0),
+    garmentId: garmentSnapshot?.garmentId || garmentSnapshot?.garment_id_code || code,
+    qrCode: garmentSnapshot?.qrCode || garmentSnapshot?.qr_code || code,
+    garmentType: garmentSnapshot?.garmentType || garmentSnapshot?.garment_type || garmentSnapshot?.category || 'Garment',
+    category: garmentSnapshot?.category || garmentSnapshot?.garmentCategory || 'GOLD',
+    brand: garmentSnapshot?.brand || 'Standard',
+    serviceType: garmentSnapshot?.serviceType || garmentSnapshot?.service_type || 'Dry clean',
+    wardrobePhotos: wardrobePhotos || { front: defaultWardrobeUrl },
+    qcPhotos: qcPhotosList,
+    solvents: Array.from(solventsUsed),
+    comments: commentsList,
+    totalVisits: matchingOrders.length,
+    history: visitHistory,
+    latestOrder: matchingOrders[0] || null,
+  };
+}

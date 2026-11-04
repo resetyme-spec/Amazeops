@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Package, Clock, ShieldCheck, ShieldAlert, CheckCircle2,
-  LogOut, RefreshCw, FileText
+  LogOut, RefreshCw, FileText, QrCode
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchOrdersByPartner, fetchOrdersForStaff } from '../lib/api';
+import { fetchOrdersByPartner, fetchOrdersForStaff, fetchGarmentLifetimeHistory } from '../lib/api';
+import QRScannerModal from '../components/QRScannerModal';
+import GarmentHistoryModal from '../components/GarmentHistoryModal';
 
 function StatCard({ label, value, icon: Icon, gradient, link, count }) {
   return (
@@ -25,7 +27,21 @@ export default function Dashboard() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [historyModal, setHistoryModal] = useState({ open: false, data: null, loading: false });
   const navigate = useNavigate();
+
+  const handleScanSuccess = async (code) => {
+    setScannerOpen(false);
+    setHistoryModal({ open: true, data: null, loading: true });
+    try {
+      const hist = await fetchGarmentLifetimeHistory(code);
+      setHistoryModal({ open: true, data: hist, loading: false });
+    } catch (err) {
+      alert(`Could not load garment history: ${err.message}`);
+      setHistoryModal({ open: false, data: null, loading: false });
+    }
+  };
 
   const loadData = async (isRefresh = false) => {
     if (!user) return;
@@ -116,6 +132,31 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Quick Action: Scan Garment Tag */}
+      <div style={{ padding: '0 16px 14px' }}>
+        <button
+          onClick={() => setScannerOpen(true)}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+            color: '#fff',
+            padding: '14px 20px',
+            borderRadius: 14,
+            border: 'none',
+            fontSize: 15,
+            fontWeight: 800,
+            boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+            cursor: 'pointer',
+          }}
+        >
+          <QrCode size={20} /> Scan Garment Tag & History
+        </button>
+      </div>
+
       <div className="stat-grid">
         <StatCard label="NEW" value={todayNew} icon={Package} gradient="linear-gradient(135deg,#667eea,#764ba2)" link="/orders" count="NEW" />
         <StatCard label="IN PROGRESS" value={stats.inProgress} icon={Clock} gradient="linear-gradient(135deg,#f59e0b,#d97706)" link="/orders" count="IN PROCESS" />
@@ -160,6 +201,18 @@ export default function Dashboard() {
           </Link>
         </div>
       )}
+
+      <QRScannerModal
+        isOpen={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScanSuccess={handleScanSuccess}
+      />
+
+      <GarmentHistoryModal
+        isOpen={historyModal.open}
+        onClose={() => setHistoryModal({ open: false, data: null, loading: false })}
+        data={historyModal.data}
+      />
     </div>
   );
 }

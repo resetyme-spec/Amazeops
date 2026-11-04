@@ -16,6 +16,7 @@
     "@capacitor/core": "^8.5.3",
     "@capacitor/local-notifications": "^8.3.1",
     "firebase": "^12.19.0",
+    "html5-qrcode": "^2.3.8",
     "lucide-react": "^1.48.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
