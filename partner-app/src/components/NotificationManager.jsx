@@ -13,6 +13,8 @@ import {
   getNotificationPermission,
   requestNotificationPermission,
   showOrderPushNotification,
+  setupAndroidNotificationChannel,
+  registerNotificationTapListener,
 } from '../lib/notifications';
 import { Bell, Volume2, VolumeX, X, ArrowRight, Sparkles } from 'lucide-react';
 
@@ -22,8 +24,21 @@ export default function NotificationManager() {
 
   const [activeAlert, setActiveAlert] = useState(null);
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
-  const [notifPermission, setNotifPermission] = useState(getNotificationPermission());
+  const [notifPermission, setNotifPermission] = useState('prompt');
   const [showPermPrompt, setShowPermPrompt] = useState(false);
+
+  // Setup Android Native Channel & Tap Listener
+  useEffect(() => {
+    setupAndroidNotificationChannel();
+    registerNotificationTapListener((orderId) => {
+      navigate(`/orders/${orderId}`);
+      setActiveAlert(null);
+    });
+
+    getNotificationPermission().then((perm) => {
+      setNotifPermission(perm);
+    });
+  }, [navigate]);
 
   // Global unlock audio on user's first click or touch
   useEffect(() => {
@@ -38,7 +53,7 @@ export default function NotificationManager() {
 
   // Show permission prompt if not yet granted
   useEffect(() => {
-    if (isNotificationSupported() && notifPermission === 'default') {
+    if (isNotificationSupported() && (notifPermission === 'default' || notifPermission === 'prompt')) {
       const timer = setTimeout(() => setShowPermPrompt(true), 1500);
       return () => clearTimeout(timer);
     } else {
