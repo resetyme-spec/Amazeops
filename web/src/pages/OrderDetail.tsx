@@ -111,9 +111,8 @@ function formatTimeFrame(ts?: string | Date | null): string {
 
 function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): TimelineStep[] {
   const soStatus = (so.status || '').toUpperCase();
-  const isDelivered = soStatus === 'DELIVERED' || soStatus === 'COMPLETED';
-  const isReady = isDelivered || soStatus === 'READY_FOR_DELIVERY' || (so as any).deliveryStatus === 'READY_FOR_DELIVERY';
-  const isQcApproved = isReady || soStatus === 'QC_APPROVED' || (so as any).qcStatus === 'QC_APPROVED' || qcRecord?.status === 'QC_APPROVED';
+  const isCompleted = soStatus === 'COMPLETED' || soStatus === 'DELIVERED' || soStatus === 'READY_FOR_DELIVERY' || soStatus === 'QC_APPROVED' || (so as any).qcStatus === 'QC_APPROVED';
+  const isQcApproved = isCompleted || qcRecord?.status === 'QC_APPROVED';
   const isQcRejected = soStatus === 'QC_REJECTED' || (so as any).qcStatus === 'QC_REJECTED' || qcRecord?.status === 'QC_REJECTED';
   const isQcSubmitted = isQcApproved || isQcRejected || soStatus === 'QC_PENDING' || soStatus === 'QC_SENT' || !!(so as any)?.qcSubmittedAt || (qcRecord && (qcRecord.subOrderId === so.id || qcRecord.orderId === so.id));
   const isInProcess = isQcSubmitted || soStatus === 'IN_PROCESS' || !!(so as any)?.acceptedAt;
@@ -123,8 +122,7 @@ function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): Timel
   const acceptedTime = (so as any)?.acceptedAt || (isInProcess ? so.updatedAt : null);
   const qcSubmittedTime = qcRecord?.submittedAt || (so as any)?.qcSubmittedAt || (isQcSubmitted ? so.updatedAt : null);
   const qcApprovedTime = qcRecord?.approvedAt || (isQcApproved ? so.updatedAt : (isQcRejected ? qcRecord?.rejectedAt || so.updatedAt : null));
-  const readyTime = (so as any)?.deliveryInitiatedAt || (isReady ? so.updatedAt : null);
-  const deliveredTime = (so as any)?.deliveredAt || (isDelivered ? so.updatedAt : null);
+  const completedTime = (so as any)?.completedAt || (isCompleted ? so.updatedAt : null);
 
   return [
     {
@@ -142,8 +140,8 @@ function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): Timel
       title: 'Accepted & Processing',
       description: isInProcess ? 'Garments in processing' : 'Partner to accept order',
       timeframe: isInProcess ? fmt(acceptedTime) : undefined,
-      status: (isQcSubmitted || isQcApproved || isReady || isDelivered) ? 'COMPLETED' : isInProcess ? 'IN_PROGRESS' : 'PENDING',
-      badgeText: (isQcSubmitted || isQcApproved || isReady || isDelivered) ? 'Done' : isInProcess ? 'In Progress' : 'Pending',
+      status: (isQcSubmitted || isQcApproved || isCompleted) ? 'COMPLETED' : isInProcess ? 'IN_PROGRESS' : 'PENDING',
+      badgeText: (isQcSubmitted || isQcApproved || isCompleted) ? 'Done' : isInProcess ? 'In Progress' : 'Pending',
     },
     {
       id: 'qc_submitted',
@@ -151,8 +149,8 @@ function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): Timel
       title: 'QC Submitted',
       description: isQcSubmitted ? 'Inspection submitted' : 'Pending inspection',
       timeframe: isQcSubmitted ? fmt(qcSubmittedTime) : undefined,
-      status: (isQcApproved || isReady || isDelivered) ? 'COMPLETED' : isQcSubmitted ? 'IN_PROGRESS' : 'PENDING',
-      badgeText: (isQcApproved || isReady || isDelivered) ? 'Done' : isQcSubmitted ? 'Under Review' : 'Pending',
+      status: (isQcApproved || isCompleted) ? 'COMPLETED' : isQcSubmitted ? 'IN_PROGRESS' : 'PENDING',
+      badgeText: (isQcApproved || isCompleted) ? 'Done' : isQcSubmitted ? 'Under Review' : 'Pending',
     },
     {
       id: 'qc_verified',
@@ -164,22 +162,13 @@ function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): Timel
       badgeText: isQcRejected ? 'Rejected' : isQcApproved ? 'Approved' : isQcSubmitted ? 'Reviewing' : 'Pending',
     },
     {
-      id: 'ready_delivery',
+      id: 'completed',
       stepNum: 5,
-      title: 'Ready to Deliver',
-      description: isReady ? 'Packed & ready' : 'Pending QC',
-      timeframe: isReady ? fmt(readyTime) : undefined,
-      status: isDelivered ? 'COMPLETED' : isReady ? 'IN_PROGRESS' : 'PENDING',
-      badgeText: isDelivered ? 'Done' : isReady ? 'Ready' : 'Pending',
-    },
-    {
-      id: 'delivered',
-      stepNum: 6,
-      title: 'Delivered',
-      description: isDelivered ? 'Delivered' : 'Pending',
-      timeframe: isDelivered ? fmt(deliveredTime) : undefined,
-      status: isDelivered ? 'COMPLETED' : 'PENDING',
-      badgeText: isDelivered ? 'Delivered' : 'Pending',
+      title: 'Completed',
+      description: isCompleted ? 'Partner processing completed' : 'Pending QC completion',
+      timeframe: isCompleted ? fmt(completedTime) : undefined,
+      status: isCompleted ? 'COMPLETED' : 'PENDING',
+      badgeText: isCompleted ? 'Completed' : 'Pending',
     },
   ];
 }
