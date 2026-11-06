@@ -10,6 +10,7 @@
     "source": "functions"
   },
   "hosting": {
+    "site": "amaze-ops",
     "public": "web/dist",
     "ignore": [
       "firebase.json",
