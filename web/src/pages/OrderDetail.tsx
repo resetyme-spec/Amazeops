@@ -1,7 +1,7 @@
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Settings, RefreshCw, AlertTriangle, CheckCircle2,
-  XCircle, Image as ImageIcon, Camera, Upload, X, MessageSquare, Eye, Tag, Truck,
+  XCircle, Image as ImageIcon, Camera, Upload, X, MessageSquare, Eye, Tag, Truck, ShieldCheck,
   Star, Droplets, Check, Clock, Sparkles, MapPin, Building2, Phone, Navigation
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
@@ -1530,28 +1530,6 @@ export default function OrderDetail() {
                         </div>
                       </div>
 
-                      {(so.status === 'QC_SENT' || so.status === 'QC_PENDING' || so.status === 'QC_REJECTED') && (
-                        <button
-                          type="button"
-                          onClick={() => handleApproveSubOrderQC(so)}
-                          style={{
-                            padding: '5px 12px',
-                            borderRadius: 6,
-                            border: '1px solid #86efac',
-                            background: '#f0fdf4',
-                            color: '#16a34a',
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4
-                          }}
-                        >
-                          <CheckCircle2 size={13} /> Approve QC
-                        </button>
-                      )}
-
                       <button
                         type="button"
                         onClick={() => setViewModal({ open: true, subOrder: so, garments: soGarments })}
@@ -2384,57 +2362,34 @@ export default function OrderDetail() {
                 </button>
 
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewQcModal({ open: false, garment: null, gUpdate: null, rejection: null, isRejected: false, isPassed: false, isPending: false });
-                      openGarmentRejectModal(g);
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: 6,
-                      border: '1px solid #fca5a5',
-                      background: '#fef2f2',
-                      color: '#dc2626',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                  >
-                    <XCircle size={15} /> {isRejected ? 'Edit Rejection' : 'Reject QC'}
-                  </button>
-
-                  {!isPassed ? (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setViewQcModal({ open: false, garment: null, gUpdate: null, rejection: null, isRejected: false, isPassed: false, isPending: false });
-                        await handlePassGarmentQC(g);
-                      }}
+                  {isPassed ? (
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a', background: '#dcfce7', border: '1px solid #86efac', padding: '5px 12px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <CheckCircle2 size={15} /> QC Approved
+                    </span>
+                  ) : isRejected ? (
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', background: '#fee2e2', border: '1px solid #fecaca', padding: '5px 12px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <XCircle size={15} /> QC Rejected
+                    </span>
+                  ) : (
+                    <Link
+                      to="/qc"
                       style={{
-                        padding: '8px 18px',
+                        padding: '7px 16px',
                         borderRadius: 6,
-                        border: 'none',
-                        background: '#16a34a',
-                        color: '#fff',
+                        border: '1.5px solid #6366f1',
+                        background: '#eef2ff',
+                        color: '#4f46e5',
                         fontSize: 13,
-                        fontWeight: 600,
-                        cursor: 'pointer',
+                        fontWeight: 700,
+                        textDecoration: 'none',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 6,
-                        boxShadow: '0 2px 4px rgba(22,163,74,0.2)'
+                        boxShadow: '0 1px 2px rgba(79,70,229,0.1)',
                       }}
                     >
-                      <CheckCircle2 size={15} /> Pass QC
-                    </button>
-                  ) : (
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <CheckCircle2 size={15} /> QC Approved
-                    </span>
+                      <ShieldCheck size={16} /> Review in Quality Control ➔
+                    </Link>
                   )}
                 </div>
               </div>
