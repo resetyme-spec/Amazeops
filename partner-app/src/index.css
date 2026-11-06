@@ -55,6 +55,40 @@ body {
 }
 .login-logo h1 { font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
 .login-subtitle { font-size: 13px; color: #64748b; margin-top: 4px; font-weight: 500; }
+
+/* Login Role Toggle */
+.login-toggle-wrap {
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 20px;
+  border: 1px solid #e2e8f0;
+}
+.login-toggle-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+.login-toggle-btn.active {
+  background: #ffffff;
+  color: #4f46e5;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
 .login-form { display: flex; flex-direction: column; gap: 14px; }
 .login-hint { text-align: center; font-size: 12px; color: #94a3b8; margin-top: 6px; }
 .error-banner { background: #fef2f2; color: #dc2626; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; }
@@ -98,15 +132,26 @@ body {
 .spinning { animation: spin 0.8s linear infinite; }
 
 /* Dashboard */
-.dashboard-screen { padding-bottom: 20px; }
+.dashboard-screen { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 76px); }
 .dashboard-header {
- padding: 20px; padding-top: max(20px, env(safe-area-inset-top));
+ padding: 20px 20px 24px; padding-top: max(20px, env(safe-area-inset-top));
  background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff;
+ display: flex; justify-content: space-between; align-items: flex-start;
 }
 .header-greeting { font-size: 13px; opacity: 0.8; font-weight: 500; }
 .header-name { font-size: 22px; font-weight: 800; margin-top: 2px; }
 .header-role { font-size: 12px; opacity: 0.7; margin-top: 2px; display: inline-block; background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px; }
 .header-actions { display: flex; gap: 8px; }
+.hamburger-btn {
+ width: 42px; height: 42px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.25);
+ background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center;
+ cursor: pointer; color: #fff; flex-shrink: 0; transition: all 0.15s ease;
+ -webkit-tap-highlight-color: transparent;
+}
+.hamburger-btn:active {
+ background: rgba(255,255,255,0.32);
+ transform: scale(0.94);
+}
 
 /* Today's Summary */
 .summary-card {
@@ -176,8 +221,11 @@ body {
 .empty-state { text-align: center; padding: 60px 20px; color: #94a3b8; }
 .empty-state p { margin-top: 10px; font-size: 14px; }
 
+/* Orders */
+.orders-screen { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 76px); }
+
 /* Detail */
-.detail-screen { padding-bottom: 100px; }
+.detail-screen { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 140px); }
 .detail-section {
  margin: 14px 16px; padding: 16px;
  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -224,10 +272,11 @@ body {
 
 /* Action Bar */
 .action-bar {
- position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
- max-width: 480px; width: 100%; padding: 14px 20px; padding-bottom: max(14px, env(safe-area-inset-bottom));
+ position: fixed; bottom: calc(env(safe-area-inset-bottom, 0px) + 58px); left: 50%; transform: translateX(-50%);
+ max-width: 480px; width: 100%; padding: 12px 20px;
  background: var(--surface); border-top: 1px solid var(--border);
- box-shadow: 0 -4px 12px rgba(0,0,0,0.04);
+ box-shadow: 0 -4px 12px rgba(0,0,0,0.06);
+ z-index: 9980;
 }
 
 /* Animations */
@@ -365,6 +414,11 @@ body {
 @keyframes pulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.08); }
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 @keyframes bellShake {

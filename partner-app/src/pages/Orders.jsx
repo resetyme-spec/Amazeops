@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Package, Clock, Search, RefreshCw, Eye, X, Shirt, CheckCircle2, Truck, AlertTriangle, QrCode } from 'lucide-react';
+import { Package, Clock, Search, RefreshCw, Eye, X, Shirt, CheckCircle2, Truck, AlertTriangle, QrCode, Menu } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
   fetchOrdersByPartner,
@@ -13,6 +13,8 @@ import {
 } from '../lib/api';
 import QRScannerModal from '../components/QRScannerModal';
 import GarmentHistoryModal from '../components/GarmentHistoryModal';
+import SideDrawer from '../components/SideDrawer';
+import PullToRefresh from '../components/PullToRefresh';
 
 const TIER_COLORS = {
   SIGNATURE: '#d97706',
@@ -118,6 +120,7 @@ export default function Orders() {
  const [selectedPartnerId, setSelectedPartnerId] = useState('');
  const [scannerOpen, setScannerOpen] = useState(false);
  const [historyModal, setHistoryModal] = useState({ open: false, data: null, loading: false });
+ const [drawerOpen, setDrawerOpen] = useState(false);
 
  const handleScanSuccess = async (code) => {
   setScannerOpen(false);
@@ -341,6 +344,7 @@ export default function Orders() {
  if (loading) return <div className="loading-screen"><div className="spinner-large" /></div>;
 
  return (
+ <PullToRefresh onRefresh={() => load(true)} isRefreshing={refreshing}>
  <div className="orders-screen">
  <header className="screen-header">
   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -351,7 +355,7 @@ export default function Orders() {
     </span>
    )}
   </div>
-  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
    <button
     onClick={() => setScannerOpen(true)}
     style={{
@@ -371,8 +375,13 @@ export default function Orders() {
    >
     <QrCode size={16} /> Scan Tag
    </button>
-   <button className="icon-btn" onClick={() => load(true)} disabled={refreshing}>
-    <RefreshCw size={18} className={refreshing ? 'spinning' : ''} />
+   <button
+    className="icon-btn"
+    onClick={() => setDrawerOpen(true)}
+    style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#334155' }}
+    title="Open Menu"
+   >
+    <Menu size={20} />
    </button>
   </div>
  </header>
@@ -742,6 +751,13 @@ export default function Orders() {
   onClose={() => setHistoryModal({ open: false, data: null, loading: false })}
   data={historyModal.data}
  />
+
+ <SideDrawer
+  isOpen={drawerOpen}
+  onClose={() => setDrawerOpen(false)}
+  onOpenScanner={() => setScannerOpen(true)}
+ />
 </div>
+</PullToRefresh>
 );
 }

@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Package, Clock, ShieldCheck, ShieldAlert, CheckCircle2,
-  LogOut, RefreshCw, FileText, QrCode
+  LogOut, RefreshCw, FileText, QrCode, Menu
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchOrdersByPartner, fetchOrdersForStaff, fetchGarmentLifetimeHistory } from '../lib/api';
 import QRScannerModal from '../components/QRScannerModal';
 import GarmentHistoryModal from '../components/GarmentHistoryModal';
+import SideDrawer from '../components/SideDrawer';
+import PullToRefresh from '../components/PullToRefresh';
 
 function StatCard({ label, value, icon: Icon, gradient, link, count }) {
   return (
@@ -29,6 +31,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [historyModal, setHistoryModal] = useState({ open: false, data: null, loading: false });
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleScanSuccess = async (code) => {
@@ -95,26 +98,27 @@ export default function Dashboard() {
   }).length;
 
   return (
-    <div className="dashboard-screen">
-      <header className="dashboard-header">
-        <div>
-          <p className="header-greeting">Welcome back,</p>
-          <p className="header-name">{user.name}</p>
-          <p className="header-role">
-            {user.isStaff
-              ? `STAFF ${user.canApproveQc ? '· QC' : ''} ${user.canViewInvoices ? '· INVOICES' : ''}`
-              : user.role}
-          </p>
-        </div>
-        <div className="header-actions">
-          <button onClick={handleRefresh} disabled={refreshing} className="icon-btn" title="Refresh">
-            <RefreshCw size={18} className={refreshing ? 'spinning' : ''} />
+    <PullToRefresh onRefresh={handleRefresh} isRefreshing={refreshing}>
+      <div className="dashboard-screen">
+        <header className="dashboard-header">
+          <div>
+            <p className="header-greeting">Welcome back,</p>
+            <p className="header-name">{user.name}</p>
+            <p className="header-role">
+              {user.isStaff
+                ? `STAFF ${user.canApproveQc ? '· QC' : ''} ${user.canViewInvoices ? '· INVOICES' : ''}`
+                : user.role}
+            </p>
+          </div>
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="hamburger-btn"
+            title="Open Menu"
+            aria-label="Open menu"
+          >
+            <Menu size={22} color="#ffffff" />
           </button>
-          <button onClick={handleLogout} className="icon-btn" title="Logout">
-            <LogOut size={18} />
-          </button>
-        </div>
-      </header>
+        </header>
 
       <div className="summary-card">
         <div className="summary-title">
@@ -213,6 +217,13 @@ export default function Dashboard() {
         onClose={() => setHistoryModal({ open: false, data: null, loading: false })}
         data={historyModal.data}
       />
+
+      <SideDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onOpenScanner={() => setScannerOpen(true)}
+      />
     </div>
+  </PullToRefresh>
   );
 }

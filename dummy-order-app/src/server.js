@@ -339,7 +339,75 @@ app.get('/api/services', checkApiKey, async (req, res) => {
 });
 
 app.post('/api/services/sync', checkApiKey, async (req, res) => {
- await syncServicesFromCustomerApp();
+ const incomingList = Array.isArray(req.body) ? req.body : (Array.isArray(req.body?.services) ? req.body.services : null);
+
+ if (incomingList && incomingList.length > 0) {
+  console.log(`[Services Sync] Processing ${incomingList.length} services pushed from Customer App`);
+  for (const cs of incomingList) {
+   if (!cs.name) continue;
+   const cleanName = String(cs.name).trim();
+   const code = cs.code || cs.service_code || cs.id || cleanName.toUpperCase().replace(/\s+/g, '-');
+   const desc = cs.description || '';
+   const isActive = cs.active !== false;
+
+   let docRef = null;
+   let existingData = {};
+
+   if (db) {
+    try {
+     const snap = await db.collection('services').where('name', '==', cleanName).get();
+     if (!snap.empty) {
+      docRef = snap.docs[0].ref;
+      existingData = snap.docs[0].data();
+     } else if (code) {
+      const snapCode = await db.collection('services').where('code', '==', code).get();
+      if (!snapCode.empty) {
+       docRef = snapCode.docs[0].ref;
+       existingData = snapCode.docs[0].data();
+      }
+     }
+    } catch (e) {
+     console.warn('[Services Sync] Firestore search warning:', e.message);
+    }
+   }
+
+   const svcDocId = docRef ? docRef.id : (cs.id || `SVC-${String(nextServiceId++).padStart(3, '0')}`);
+   const targetDoc = docRef || (db ? db.collection('services').doc(svcDocId) : null);
+
+   const serviceRecord = {
+    id: targetDoc ? targetDoc.id : svcDocId,
+    name: cleanName,
+    code,
+    amazeFabServiceId: cs.amazeFabServiceId || cs.code || `AMF-${cleanName.slice(0, 4).toUpperCase().replace(/\s+/g, '')}`,
+    description: desc,
+    // Preserve existing rates configured by admin in Amaze Ops; default only if brand new
+    goldRate: existingData?.goldRate !== undefined ? Number(existingData.goldRate) : 100,
+    yellowRate: existingData?.yellowRate !== undefined ? Number(existingData.yellowRate) : 80,
+    blueRate: existingData?.blueRate !== undefined ? Number(existingData.blueRate) : 60,
+    active: isActive,
+    updatedAt: new Date().toISOString()
+   };
+
+   if (targetDoc) {
+    try {
+     await targetDoc.set(serviceRecord, { merge: true });
+    } catch (err) {
+     console.error('[Services Sync] Error saving service to Firestore:', err.message);
+    }
+   }
+
+   const memIdx = services.findIndex(s => s.name?.toLowerCase() === cleanName.toLowerCase() || (s.code && s.code === code));
+   if (memIdx >= 0) {
+    services[memIdx] = { ...services[memIdx], ...serviceRecord };
+   } else {
+    services.push(serviceRecord);
+   }
+  }
+ } else {
+  // Fallback: Pull from customer app if URL configured
+  await syncServicesFromCustomerApp();
+ }
+
  if (db) {
   try {
    const snap = await db.collection('services').get();
@@ -736,7 +804,9 @@ app.post('/api/users', checkApiKey, (req, res) => {
   role: data.role || 'PARTNER',
   partnerId: data.partnerId || null,
   assignedOrders: data.assignedOrders || [],
+  assignedPartnerIds: data.assignedPartnerIds || [],
   permissions: data.permissions || {},
+  mustChangePassword: data.mustChangePassword !== false,
   isActive: data.isActive !== false,
   createdAt: new Date().toISOString(),
  };

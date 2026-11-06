@@ -385,8 +385,10 @@ export interface AppUser {
  partnerId?: string;
  partnerCode?: string;
  assignedOrders: string[];
+ assignedPartnerIds?: string[];
  permissions: Record<string, boolean>;
  isActive: boolean;
+ mustChangePassword?: boolean;
  createdAt: string;
 }
 

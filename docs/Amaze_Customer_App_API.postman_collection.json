@@ -1,0 +1,140 @@
+{
+  "info": {
+    "_postman_id": "amaze-customer-app-api-v2",
+    "name": "Amaze Fab & Amaze Ops — Customer App Integration API",
+    "description": "Production & Staging APIs for connecting the Customer App with Amaze Ops Factory Network. Covers Services catalog sync, Order booking, QR tags, Wardrobe & QC image URLs, Live tracking, and Digital Garment Passports.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://amaze-ops.web.app",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "amaze-fab-super-admin-key-2026",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Services Catalog",
+      "item": [
+        {
+          "name": "Push Services to Amaze Ops (Customer App -> Amaze Ops)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-api-key", "value": "{{apiKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"services\": [\n    {\n      \"name\": \"Dry Clean\",\n      \"code\": \"DRY-CLEAN\",\n      \"description\": \"Eco-friendly solvent dry cleaning with hand press\",\n      \"active\": true\n    },\n    {\n      \"name\": \"Wash & Iron\",\n      \"code\": \"WASH-IRON\",\n      \"description\": \"Bio-wash detergent cycle followed by steam iron\",\n      \"active\": true\n    },\n    {\n      \"name\": \"Iron Only\",\n      \"code\": \"IRON-ONLY\",\n      \"description\": \"Steam press finishing for formalwear\",\n      \"active\": true\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/services/sync",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "services", "sync"]
+            },
+            "description": "Customer App pushes its services. Amaze Ops saves them and preserves configured Gold/Yellow/Blue partner payout rates."
+          }
+        },
+        {
+          "name": "Get Services & Configured Rates",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-api-key", "value": "{{apiKey}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "services"]
+            },
+            "description": "Fetches active services with configured Gold, Yellow, and Blue pricing."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Orders & Live Tracking",
+      "item": [
+        {
+          "name": "Place New Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-api-key", "value": "{{apiKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_no\": \"ORD-2026-9812\",\n  \"customer_name\": \"Ramesh Kumar\",\n  \"customer_phone\": \"+91 98765 43210\",\n  \"customer_category\": \"Signature Care\",\n  \"care_category\": \"SIGNATURE\",\n  \"status\": \"RECEIVED\",\n  \"city\": \"Chennai\",\n  \"pincode\": \"600040\",\n  \"hub\": {\n    \"name\": \"Amaze Main Hub\",\n    \"code\": \"HUB-CHN-01\",\n    \"address\": \"No. 42, 2nd Avenue, Anna Nagar West, Chennai\"\n  },\n  \"garments\": [\n    {\n      \"garment_id_code\": \"GAR-ORD-9812-1\",\n      \"qr_code\": \"AMZ-TAG-78421\",\n      \"garment_type\": \"SILK_SAREE\",\n      \"category\": \"GOLD\",\n      \"service_type\": \"Dry Clean\",\n      \"brand\": \"Kanchipuram Silk\",\n      \"color\": \"Royal Blue\",\n      \"wardrobePhotos\": {\n        \"front\": \"https://storage.googleapis.com/amaze-ops/Wardrobe/ORD-2026-9812/GAR-1/front.jpg\"\n      }\n    },\n    {\n      \"garment_id_code\": \"GAR-ORD-9812-2\",\n      \"qr_code\": \"AMZ-TAG-78422\",\n      \"garment_type\": \"SHIRT\",\n      \"category\": \"BLUE\",\n      \"service_type\": \"Wash & Iron\",\n      \"brand\": \"Raymond\",\n      \"color\": \"White\",\n      \"wardrobePhotos\": {\n        \"front\": \"https://storage.googleapis.com/amaze-ops/Wardrobe/ORD-2026-9812/GAR-2/front.jpg\"\n      }\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders"]
+            },
+            "description": "Places customer order into factory queue with QR tags and initial wardrobe photos."
+          }
+        },
+        {
+          "name": "Live Order Tracking by Order ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-api-key", "value": "{{apiKey}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/ORD-2026-9812",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "ORD-2026-9812"]
+            },
+            "description": "Returns current order milestone, per-garment processing status, and QC inspection photos."
+          }
+        },
+        {
+          "name": "Customer Orders List by Phone",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-api-key", "value": "{{apiKey}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders?phone=+919876543210",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders"],
+              "query": [
+                { "key": "phone", "value": "+919876543210" }
+              ]
+            },
+            "description": "Fetches order history for customer mobile number."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Garment Digital Passport",
+      "item": [
+        {
+          "name": "Get Garment Lifetime Passport & QC Archive",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-api-key", "value": "{{apiKey}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/garments/AMZ-TAG-78421/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "garments", "AMZ-TAG-78421", "history"]
+            },
+            "description": "Retrieves complete lifetime history for a garment's physical QR tag."
+          }
+        }
+      ]
+    }
+  ]
+}

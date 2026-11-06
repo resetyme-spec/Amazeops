@@ -122,7 +122,7 @@ const SectionGrid = ({ children }: { children: React.ReactNode }) => (
  // Create Firebase Auth account for new partner
  if (!editingId && form.email) {
  try {
- const userCred = await createUserWithEmailAndPassword(auth, form.email, '123456');
+ const userCred = await createUserWithEmailAndPassword(auth, form.email, 'Admin@123');
  // Try to store user profile in Firestore (may fail if rules block)
  try {
  await setDoc(doc(db, 'users', userCred.user.uid), {
@@ -138,7 +138,7 @@ const SectionGrid = ({ children }: { children: React.ReactNode }) => (
  } catch (firestoreErr) {
  console.warn('Firestore write failed (permission issue), but Firebase Auth account was created:', firestoreErr);
  }
- setAccountCreated({ email: form.email, password: '123456' });
+ setAccountCreated({ email: form.email, password: 'Admin@123' });
  } catch (fbErr: any) {
  if (fbErr?.code === 'auth/email-already-in-use') {
  alert('Firebase account already exists for this email. User can login directly.');
@@ -235,7 +235,7 @@ const SectionGrid = ({ children }: { children: React.ReactNode }) => (
  if (!p.email) { alert('No email for this partner'); return; }
  setCreatingAccount(true);
  try {
- const userCred = await createUserWithEmailAndPassword(auth, p.email, '123456');
+ const userCred = await createUserWithEmailAndPassword(auth, p.email, 'Admin@123');
  await setDoc(doc(db, 'users', userCred.user.uid), {
  email: p.email,
  name: p.contactPerson || p.companyName,
@@ -246,7 +246,7 @@ const SectionGrid = ({ children }: { children: React.ReactNode }) => (
  mustChangePassword: true,
  createdAt: serverTimestamp(),
  });
- alert('Firebase account created! Password: 123456');
+ alert('Firebase account created! Password: Admin@123');
  } catch (fbErr: any) {
  if (fbErr?.code === 'auth/email-already-in-use') {
  alert('Firebase account already exists for this email');

@@ -3,10 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   FileText, ArrowLeft, RefreshCw, CheckCircle2, Clock,
   DollarSign, ChevronRight, X, Printer, CreditCard, Building2,
-  Calendar, ShieldCheck
+  Calendar, ShieldCheck, Menu
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchInvoicesByPartner } from '../lib/api';
+import SideDrawer from '../components/SideDrawer';
+import PullToRefresh from '../components/PullToRefresh';
 
 function getBadge(status) {
   const s = (status || '').toUpperCase();
@@ -26,6 +28,7 @@ export default function PartnerInvoices() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const loadData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -77,27 +80,28 @@ export default function PartnerInvoices() {
   }
 
   return (
-    <div style={{ paddingBottom: 60, minHeight: '100vh', background: '#f8fafc' }}>
-      {/* Header */}
-      <header className="screen-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <PullToRefresh onRefresh={() => loadData(true)} isRefreshing={refreshing}>
+      <div style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)', minHeight: '100vh', background: '#f8fafc' }}>
+        {/* Header */}
+        <header className="screen-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={() => navigate('/')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#475569', padding: 4 }}
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <h1 style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>Earnings & Invoices</h1>
+          </div>
           <button
-            onClick={() => navigate('/')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#475569', padding: 4 }}
+            className="icon-btn"
+            onClick={() => setDrawerOpen(true)}
+            style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}
+            title="Open Menu"
           >
-            <ArrowLeft size={20} />
+            <Menu size={18} />
           </button>
-          <h1 style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>Earnings & Invoices</h1>
-        </div>
-        <button
-          className="icon-btn"
-          onClick={() => loadData(true)}
-          disabled={refreshing}
-          style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}
-        >
-          <RefreshCw size={16} className={refreshing ? 'spinning' : ''} />
-        </button>
-      </header>
+        </header>
 
       {/* Overview Earnings Card */}
       <div style={{ padding: '16px 16px 8px' }}>
@@ -347,6 +351,12 @@ export default function PartnerInvoices() {
           </div>
         </div>
       )}
+
+      <SideDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
     </div>
+  </PullToRefresh>
   );
 }

@@ -249,6 +249,64 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
             return;
         }
     }
+    // POST /services/sync — Sync service catalog pushed by Customer App
+    if (req.method === 'POST' && (cleanPath === '/services/sync' || cleanPath === '/services')) {
+        try {
+            const incomingList = Array.isArray(req.body) ? req.body : (Array.isArray(req.body?.services) ? req.body.services : null);
+            if (!incomingList || incomingList.length === 0) {
+                res.status(400).json({ error: 'Invalid payload: Expected an array or { services: [...] }' });
+                return;
+            }
+            let syncedCount = 0;
+            for (const cs of incomingList) {
+                if (!cs.name)
+                    continue;
+                const cleanName = String(cs.name).trim();
+                const code = cs.code || cs.service_code || cs.id || cleanName.toUpperCase().replace(/\s+/g, '-');
+                const desc = cs.description || '';
+                const isActive = cs.active !== false;
+                let docRef = null;
+                let existingData = {};
+                const snapName = await db.collection('services').where('name', '==', cleanName).get();
+                if (!snapName.empty) {
+                    docRef = snapName.docs[0].ref;
+                    existingData = snapName.docs[0].data();
+                }
+                else if (code) {
+                    const snapCode = await db.collection('services').where('code', '==', code).get();
+                    if (!snapCode.empty) {
+                        docRef = snapCode.docs[0].ref;
+                        existingData = snapCode.docs[0].data();
+                    }
+                }
+                const targetDoc = docRef || db.collection('services').doc();
+                const serviceRecord = {
+                    id: targetDoc.id,
+                    name: cleanName,
+                    code,
+                    amazeFabServiceId: cs.amazeFabServiceId || cs.code || `AMF-${cleanName.slice(0, 4).toUpperCase().replace(/\s+/g, '')}`,
+                    description: desc,
+                    goldRate: existingData?.goldRate !== undefined ? Number(existingData.goldRate) : 100,
+                    yellowRate: existingData?.yellowRate !== undefined ? Number(existingData.yellowRate) : 80,
+                    blueRate: existingData?.blueRate !== undefined ? Number(existingData.blueRate) : 60,
+                    active: isActive,
+                    updatedAt: new Date().toISOString()
+                };
+                await targetDoc.set(serviceRecord, { merge: true });
+                syncedCount++;
+            }
+            res.status(200).json({
+                success: true,
+                count: syncedCount,
+                message: 'Services catalog synced successfully. Partner pricing preserved.'
+            });
+            return;
+        }
+        catch (err) {
+            res.status(500).json({ error: 'Failed to sync services', details: err.message });
+            return;
+        }
+    }
     // POST /orders
     if (req.method === 'POST' && (cleanPath === '/orders' || cleanPath === '/' || cleanPath === '')) {
         try {
@@ -293,6 +351,12 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
                     garmentCategory: rawCat,
                     serviceType: g.service_type || g.serviceType || 'Dry clean',
                     service_type: g.service_type || g.serviceType || 'Dry clean',
+                    brand: g.brand || '',
+                    color: g.color || '',
+                    pieces: g.pieces || 1,
+                    price: g.price || 0,
+                    special_instructions: g.special_instructions || g.specialInstructions || '',
+                    defects_noted: g.defects_noted || g.defectsNoted || '',
                     status: 'PENDING',
                 };
             }) : [];
@@ -338,9 +402,12 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
                     partnerId: best.id,
                     partnerCode: best.partnerCode || 'P',
                     partnerName: best.companyName || best.name || 'Partner',
+                    partnerPhone: best.phone || best.contactPhone || '',
+                    partnerAddress: best.address || '',
                     partnerGeoLocation: bestCoords ? { latitude: bestCoords.lat, longitude: bestCoords.lng } : null,
                     careCategory: cat,
-                    garmentIds: group.map(g => g.garmentId),
+                    garments: group,
+                    garmentIds: group.map(g => g.garmentId || g.garment_id_code),
                     garmentCount: group.length,
                     distanceKm: dist,
                     distance: dist != null ? `${dist} km` : '',
@@ -354,9 +421,11 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
                 partnerMap.set(a.partnerId, list);
             }
             const generatedSubOrders = [];
+            const formattedAssignments = [];
             const batch = db.batch();
             for (const [, group] of partnerMap) {
                 const first = group[0];
+                const allGarments = group.flatMap(a => a.garments || []);
                 const allGarmentIds = group.flatMap(a => a.garmentIds);
                 const subOrderCode = `${orderId}-${first.partnerCode}-${subNum}`;
                 const subRef = db.collection('subOrders').doc(subOrderCode);
@@ -369,10 +438,13 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
                     partnerId: first.partnerId,
                     partnerCode: first.partnerCode,
                     partnerName: first.partnerName,
+                    partnerPhone: first.partnerPhone,
+                    partnerAddress: first.partnerAddress,
                     partnerGeoLocation: first.partnerGeoLocation,
                     garmentCategory: group.map(g => g.careCategory).join(','),
                     careCategory: group.map(g => g.careCategory).join(','),
                     garmentIds: allGarmentIds,
+                    garments: allGarments,
                     garmentCount: allGarmentIds.length,
                     distanceKm: first.distanceKm,
                     distance: first.distance,
@@ -383,6 +455,26 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
                 };
                 batch.set(subRef, soData, { merge: true });
                 generatedSubOrders.push(soData);
+                formattedAssignments.push({
+                    sub_order_no: subOrderCode,
+                    category: group.map(g => g.careCategory).join(','),
+                    garment_count: allGarments.length,
+                    partner: {
+                        id: first.partnerId,
+                        name: first.partnerName,
+                        phone: first.partnerPhone || '',
+                        address: first.partnerAddress || '',
+                        geo_location: first.partnerGeoLocation || null,
+                        distance_from_hub_km: first.distanceKm != null ? Math.round(first.distanceKm * 10) / 10 : null,
+                    },
+                    garments: allGarments.map((g) => ({
+                        garment_id_code: g.garment_id_code || g.garmentId,
+                        qr_code: g.qr_code || g.qrCode,
+                        garment_type: g.garment_type || g.garmentType,
+                        category: g.category || g.garmentCategory,
+                        service_type: g.service_type || g.serviceType,
+                    })),
+                });
                 subNum++;
             }
             const orderStatus = generatedSubOrders.length > 0 ? 'ASSIGNED' : 'RECEIVED';
@@ -449,16 +541,10 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
             }
             res.status(201).json({
                 success: true,
-                orderId,
-                mainOrderNumber: orderId,
+                order_no: orderId,
                 status: orderStatus,
-                totalSubOrders: generatedSubOrders.length,
-                customerAppNotified: notifySuccess,
-                subOrders: generatedSubOrders,
-                order: orderPayload,
-                message: generatedSubOrders.length > 0
-                    ? 'Order received and automatically split to nearest partners'
-                    : 'Order received and queued for partner assignment',
+                total_sub_orders: generatedSubOrders.length,
+                partner_assignments: formattedAssignments,
             });
             return;
         }

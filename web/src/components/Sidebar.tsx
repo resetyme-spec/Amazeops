@@ -13,7 +13,7 @@ const NAV_ITEMS = [
  { path: '/invoices', label: 'Invoices', icon: FileText, roles: ['ADMIN', 'SUPER_ADMIN', 'STAFF', 'PARTNER'] },
  { path: '/qc', label: 'QC Check', icon: ShieldAlert, roles: ['ADMIN', 'SUPER_ADMIN', 'STAFF'] },
  { path: '/critical', label: 'Critical Cases', icon: ShieldAlert, roles: ['ADMIN', 'SUPER_ADMIN', 'STAFF'] },
- { path: '/users', label: 'Users', icon: UserCog, roles: ['ADMIN', 'SUPER_ADMIN'] },
+ { path: '/users', label: 'Staff', icon: UserCog, roles: ['ADMIN', 'SUPER_ADMIN'] },
  { path: '/activity-logs', label: 'Activity Logs', icon: ScrollText, roles: ['ADMIN', 'SUPER_ADMIN'] },
  { path: '/settings', label: 'Settings', icon: Settings, roles: ['ADMIN', 'SUPER_ADMIN'] },
 ];

@@ -91,7 +91,7 @@ export default function ChangePassword({ onComplete }) {
  type={showPasswords ? 'text' : 'password'}
  value={currentPassword}
  onChange={e => setCurrentPassword(e.target.value)}
- placeholder="Enter current password (123456)"
+ placeholder="Enter current password (e.g. Admin@123)"
  required
  />
  <button type="button" className="password-toggle" onClick={() => setShowPasswords(!showPasswords)}>

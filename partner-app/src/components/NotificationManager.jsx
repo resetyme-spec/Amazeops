@@ -131,24 +131,27 @@ export default function NotificationManager() {
   return (
     <>
       {/* 1. Global Floating Permission Prompt Pill */}
-      {showPermPrompt && (
+      {user && showPermPrompt && (
         <div style={styles.permBanner}>
           <div style={styles.permContent}>
-            <Bell size={18} color="#4f46e5" className="bell-shake" />
-            <span style={styles.permText}>
-              Enable sound & push alerts for incoming orders
-            </span>
+            <div style={styles.permIconWrap}>
+              <Bell size={16} color="#4f46e5" className="bell-shake" />
+            </div>
+            <div style={styles.permTextGroup}>
+              <span style={styles.permTitle}>Enable Order Alerts</span>
+              <span style={styles.permSub}>Sound & push on new orders</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div style={styles.permActions}>
             <button onClick={handleEnablePush} style={styles.permBtn}>
-              Enable Alerts
+              Enable
             </button>
             <button
               onClick={() => setShowPermPrompt(false)}
               style={styles.permCloseBtn}
               title="Dismiss"
             >
-              <X size={14} />
+              <X size={15} />
             </button>
           </div>
         </div>
@@ -233,53 +236,95 @@ export default function NotificationManager() {
 const styles = {
   permBanner: {
     position: 'fixed',
-    top: 12,
-    left: '50%',
-    transform: 'translateX(-50%)',
+    top: 'max(46px, calc(env(safe-area-inset-top, 0px) + 12px))',
+    left: 12,
+    right: 12,
+    margin: '0 auto',
+    maxWidth: 420,
     zIndex: 9999,
     background: '#ffffff',
     border: '1px solid #c7d2fe',
-    boxShadow: '0 8px 24px rgba(79, 70, 229, 0.18)',
-    borderRadius: 30,
-    padding: '8px 14px',
+    boxShadow: '0 10px 25px -3px rgba(79, 70, 229, 0.22), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+    borderRadius: 16,
+    padding: '8px 12px',
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    maxWidth: '92vw',
+    justifyContent: 'space-between',
+    gap: 8,
+    boxSizing: 'border-box',
+    animation: 'slideDown 0.3s ease-out',
   },
   permContent: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
   },
-  permText: {
+  permIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: '50%',
+    background: '#eef2ff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  permTextGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+  },
+  permTitle: {
     fontSize: 13,
-    fontWeight: 600,
-    color: '#1f2937',
+    fontWeight: 700,
+    color: '#1e1b4b',
+    lineHeight: 1.25,
     whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  permSub: {
+    fontSize: 11,
+    fontWeight: 500,
+    color: '#6b7280',
+    lineHeight: 1.25,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  permActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
   },
   permBtn: {
     background: '#4f46e5',
     color: '#ffffff',
     border: 'none',
     borderRadius: 20,
-    padding: '5px 12px',
+    padding: '6px 14px',
     fontSize: 12,
     fontWeight: 700,
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    boxShadow: '0 2px 5px rgba(79, 70, 229, 0.3)',
   },
   permCloseBtn: {
     background: 'transparent',
     border: 'none',
     color: '#9ca3af',
     cursor: 'pointer',
-    padding: 4,
+    padding: 6,
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   soundToggleBtn: {
     position: 'fixed',
-    bottom: 80,
+    bottom: 'calc(env(safe-area-inset-bottom, 0px) + 72px)',
     right: 16,
     zIndex: 9998,
     width: 42,
