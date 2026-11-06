@@ -229,6 +229,10 @@ function calculateOverallOrderStatus(subOrders) {
     if (!subOrders || subOrders.length === 0)
         return 'RECEIVED';
     const statuses = subOrders.map(s => String(s.status || '').toUpperCase());
+    // If all or any are PICKUP_ARRANGED (and rest are completed)
+    if (statuses.some(s => s === 'PICKUP_ARRANGED')) {
+        return 'PICKUP_ARRANGED';
+    }
     // If all are COMPLETED (or legacy DELIVERED / READY_TO_DELIVER)
     if (statuses.every(s => ['COMPLETED', 'DELIVERED', 'READY_TO_DELIVER', 'READY_FOR_DELIVERY', 'QC_APPROVED'].includes(s))) {
         return 'COMPLETED';
@@ -340,6 +344,18 @@ async function syncSubOrderStatusAndNotify(targetId, newStatus, extraData = {}) 
             parentUpdate.qcStatus = 'QC_PENDING';
             if (extraData.qcSubmission)
                 parentUpdate.qcSubmission = extraData.qcSubmission;
+        }
+        else if (newStatus === 'PICKUP_ARRANGED' || extraData.pickupArranged) {
+            parentUpdate.status = 'PICKUP_ARRANGED';
+            parentUpdate.pickupStatus = 'PICKUP_ARRANGED';
+            parentUpdate.pickupArranged = true;
+            parentUpdate.pickupArrangedAt = now;
+            if (extraData.rider_name)
+                parentUpdate.rider_name = extraData.rider_name;
+            if (extraData.rider_phone)
+                parentUpdate.rider_phone = extraData.rider_phone;
+            if (extraData.pickup_time)
+                parentUpdate.pickup_time = extraData.pickup_time;
         }
         else if (['COMPLETED', 'READY_TO_DELIVER', 'QC_APPROVED', 'DELIVERED'].includes(newStatus)) {
             parentUpdate.qcStatus = 'APPROVED';

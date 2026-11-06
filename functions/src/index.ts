@@ -662,6 +662,9 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
     const st = (soStatus || '').toUpperCase();
     const qc = (qcStatus || '').toUpperCase();
 
+    if (st === 'PICKUP_ARRANGED') {
+     return { step: 5, label: 'Pickup Arranged', pct: 100 };
+    }
     if (st === 'COMPLETED' || st === 'DELIVERED') {
      return { step: 5, label: 'Completed', pct: 100 };
     }
@@ -731,8 +734,12 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
 
    // Calculate overall order status based on partner sub-orders
    let overallStatus = curStatus;
-   if (partnerStatuses.length > 0) {
-    if (partnerStatuses.every((p: any) => p.status === 'COMPLETED')) {
+   if (curStatus === 'PICKUP_ARRANGED' || (orderData as any).pickupStatus === 'PICKUP_ARRANGED' || (orderData as any).pickupArranged) {
+    overallStatus = 'PICKUP_ARRANGED';
+   } else if (partnerStatuses.length > 0) {
+    if (partnerStatuses.some((p: any) => p.status === 'PICKUP_ARRANGED')) {
+     overallStatus = 'PICKUP_ARRANGED';
+    } else if (partnerStatuses.every((p: any) => p.status === 'COMPLETED')) {
      overallStatus = 'COMPLETED';
     } else if (partnerStatuses.some((p: any) => p.status === 'QC_REJECTED')) {
      overallStatus = 'QC_REJECTED';
@@ -752,7 +759,8 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
     { key: 'IN_PROCESS', name: 'Accepted & Processing', step: 2, pct: 40 },
     { key: 'QC_PENDING', name: 'QC Submitted', step: 3, pct: 60 },
     { key: 'QC_APPROVED', name: 'QC Verified', step: 4, pct: 80 },
-    { key: 'COMPLETED', name: 'Completed', step: 5, pct: 100 }
+    { key: 'COMPLETED', name: 'Completed', step: 5, pct: 100 },
+    { key: 'PICKUP_ARRANGED', name: 'Pickup Arranged', step: 5, pct: 100 }
    ];
    const stageKeys = stages.map(s => s.key);
    const curIdx = stageKeys.indexOf(overallStatus) !== -1 ? stageKeys.indexOf(overallStatus) : 0;
@@ -970,6 +978,116 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
    return;
   } catch (err: any) {
    res.status(500).json({ error: 'Failed to approve QC', details: err.message });
+   return;
+  }
+ }
+
+ // POST /orders/:id/pickup-arranged (Customer app notifies that pickup has been scheduled)
+ const pickupMatch = cleanPath.match(/^\/(?:orders|sub-orders)\/([^/]+)\/(?:pickup-arranged|pickup)$/);
+ if (req.method === 'POST' && pickupMatch) {
+  try {
+   const targetId = pickupMatch[1];
+   const now = new Date().toISOString();
+   const { rider_name, rider_phone, pickup_time, notes } = req.body || {};
+   const pickupDetails: any = {
+    status: 'PICKUP_ARRANGED',
+    deliveryStatus: 'PICKUP_ARRANGED',
+    pickupStatus: 'PICKUP_ARRANGED',
+    pickupArranged: true,
+    pickupArrangedAt: now,
+    rider_name: rider_name || null,
+    rider_phone: rider_phone || null,
+    pickup_time: pickup_time || null,
+    notes: notes || null,
+    updatedAt: now,
+   };
+
+   // 1. Check if targetId is an order in orders collection
+   let orderDoc = await db.collection('orders').doc(targetId).get();
+   if (!orderDoc.exists) {
+    let qSnap = await db.collection('orders').where('orderNumber', '==', targetId).limit(1).get();
+    if (qSnap.empty) {
+     qSnap = await db.collection('orders').where('order_no', '==', targetId).limit(1).get();
+    }
+    if (qSnap.empty) {
+     qSnap = await db.collection('orders').where('orderId', '==', targetId).limit(1).get();
+    }
+    if (!qSnap.empty) {
+     orderDoc = qSnap.docs[0];
+    }
+   }
+
+   if (orderDoc.exists) {
+    const orderId = orderDoc.id;
+    await db.collection('orders').doc(orderId).set(pickupDetails, { merge: true });
+
+    // Also update all sub-orders under this order so partners see the badge
+    let subsSnap = await db.collection('subOrders').where('orderId', '==', orderId).get();
+    if (subsSnap.empty) {
+     const ordNum = orderDoc.data()?.orderNumber || orderDoc.data()?.order_no;
+     if (ordNum) {
+      subsSnap = await db.collection('subOrders').where('mainOrderNumber', '==', ordNum).get();
+     }
+    }
+
+    if (!subsSnap.empty) {
+     const batch = db.batch();
+     subsSnap.docs.forEach(docSnap => {
+      batch.set(docSnap.ref, pickupDetails, { merge: true });
+     });
+     await batch.commit();
+    }
+
+    res.status(200).json({
+     success: true,
+     order_no: orderDoc.data()?.order_no || orderDoc.data()?.orderNumber || orderId,
+     status: 'PICKUP_ARRANGED',
+     badge: 'PICKUP ARRANGED',
+     pickup_arranged_at: now,
+     rider_name: rider_name || null,
+     rider_phone: rider_phone || null,
+     pickup_time: pickup_time || null,
+     sub_orders_updated: subsSnap.size,
+     message: 'Pickup arranged successfully. Status badge updated to PICKUP ARRANGED across Admin and Partner apps.'
+    });
+    return;
+   }
+
+   // 2. Otherwise check if targetId is a sub-order
+   let subDoc = await db.collection('subOrders').doc(targetId).get();
+   if (!subDoc.exists) {
+    let qSub = await db.collection('subOrders').where('subOrderCode', '==', targetId).limit(1).get();
+    if (qSub.empty) {
+     qSub = await db.collection('subOrders').where('subOrderNumber', '==', targetId).limit(1).get();
+    }
+    if (!qSub.empty) {
+     subDoc = qSub.docs[0];
+    }
+   }
+
+   if (subDoc.exists) {
+    await subDoc.ref.set(pickupDetails, { merge: true });
+    const sData = subDoc.data() || {};
+    const parentId = sData.orderId || sData.mainOrderNumber;
+    if (parentId) {
+     await db.collection('orders').doc(parentId).set(pickupDetails, { merge: true });
+    }
+    res.status(200).json({
+     success: true,
+     sub_order_no: sData.subOrderCode || sData.subOrderNumber || subDoc.id,
+     status: 'PICKUP_ARRANGED',
+     badge: 'PICKUP ARRANGED',
+     pickup_arranged_at: now,
+     rider_name: rider_name || null,
+     message: 'Sub-order pickup arranged successfully.'
+    });
+    return;
+   }
+
+   res.status(404).json({ error: 'Order or Sub-order not found', targetId });
+   return;
+  } catch (err: any) {
+   res.status(500).json({ error: 'Failed to arrange pickup', details: err.message });
    return;
   }
  }

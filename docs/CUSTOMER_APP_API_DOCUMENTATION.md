@@ -443,7 +443,45 @@ Each assigned partner progresses independently through these 5 lifecycle milesto
 
 ---
 
-### 3.5 Customer Order History List (`GET /api/orders`)
+### 3.5 Notify Pickup Arranged (`POST /api/orders/:order_no/pickup-arranged`)
+> **Use Case:** Once garments are marked **Completed**, Customer App or Logistics triggers this API to schedule pickup. Updates the order and all partner sub-orders with the **"PICKUP ARRANGED"** badge in both the Admin Operations Portal and the Partner App.
+
+* **Method:** `POST`
+* **Path:** `/api/orders/:order_no/pickup-arranged` (or `/api/orders/:order_no/pickup`)
+* **Example:** `POST https://amaze-ops.web.app/api/orders/AF-50201/pickup-arranged`
+* **Headers:**
+  * `Content-Type: application/json`
+  * `x-api-key: amaze-fab-super-admin-key-2026`
+
+#### Request Body (Optional details)
+```json
+{
+  "rider_name": "Suresh (Logistics)",
+  "rider_phone": "+91 98400 99999",
+  "pickup_time": "2026-11-07T10:30:00.000Z",
+  "notes": "Van route 4 arriving for batch pickup"
+}
+```
+
+#### Response (`200 OK`)
+```json
+{
+  "success": true,
+  "order_no": "AF-50201",
+  "status": "PICKUP_ARRANGED",
+  "badge": "PICKUP ARRANGED",
+  "pickup_arranged_at": "2026-11-07T00:15:00.000Z",
+  "rider_name": "Suresh (Logistics)",
+  "rider_phone": "+91 98400 99999",
+  "pickup_time": "2026-11-07T10:30:00.000Z",
+  "sub_orders_updated": 2,
+  "message": "Pickup arranged successfully. Status badge updated to PICKUP ARRANGED across Admin and Partner apps."
+}
+```
+
+---
+
+### 3.6 Customer Order History List (`GET /api/orders`)
 > **Use Case:** Fetch all past and active orders for a customer account.
 
 * **Method:** `GET`
@@ -476,7 +514,7 @@ Each assigned partner progresses independently through these 5 lifecycle milesto
 
 ---
 
-### 3.6 Garment Lifetime Passport & QC Archive (`GET /api/garments/:qrCode/history`)
+### 3.7 Garment Lifetime Passport & QC Archive (`GET /api/garments/:qrCode/history`)
 > **Use Case:** Tapping any garment in the customer's digital wardrobe displays its full lifetime history, visit records, chemical treatments, and past QC photos.
 
 * **Method:** `GET`

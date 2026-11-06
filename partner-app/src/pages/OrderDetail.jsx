@@ -675,7 +675,8 @@ export default function OrderDetail() {
     return g.qcStatus === 'QC_REJECTED' || !!rej || isMentioned;
   }).length;
 
-  const isCompleted = order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.status === 'QC_APPROVED' || order.qcStatus === 'QC_APPROVED';
+  const isPickupArranged = order.status === 'PICKUP_ARRANGED' || order.pickupStatus === 'PICKUP_ARRANGED' || order.pickupArranged;
+  const isCompleted = !isPickupArranged && (order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.status === 'QC_APPROVED' || order.qcStatus === 'QC_APPROVED');
   const isReadyForDelivery = false;
   const isQcRejected = !isCompleted && (
     order.status === 'QC_REJECTED' ||
@@ -723,10 +724,36 @@ export default function OrderDetail() {
         <div className="status-row">
           <span className="status-label">Status:</span>
           <span className={`status-badge-lg ${isReadyForDelivery ? 'status-approved' : isQcRejected ? 'status-rejected' : isQcApproved ? 'status-approved' : isQcPending ? 'status-pending' : isNormalRejected ? 'status-rejected' : 'status-active'}`}>
-            {isCompleted ? 'COMPLETED' : isQcRejected ? 'QC REJECTED' : isQcPending ? 'QC SENT' : order.status}
+            {isPickupArranged ? 'PICKUP ARRANGED' : isCompleted ? 'COMPLETED' : isQcRejected ? 'QC REJECTED' : isQcPending ? 'QC SENT' : order.status}
           </span>
         </div>
       </div>
+
+      {/* Pickup Arranged Banner */}
+      {isPickupArranged && (
+        <div style={{
+          background: '#eef2ff',
+          border: '1.5px solid #a5b4fc',
+          borderRadius: 10,
+          padding: '14px 16px',
+          marginBottom: 16,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Truck size={20} color="#4338ca" />
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#312e81' }}>🚚 Pickup Arranged by Customer App</div>
+            <div style={{ fontSize: 12, color: '#3730a3', marginTop: 3 }}>
+              Logistics rider has been scheduled to collect these completed garments.
+              {order.rider_name && <span style={{ marginLeft: 8, fontWeight: 700 }}>· Rider: {order.rider_name} ({order.rider_phone || 'No phone'})</span>}
+              {order.pickup_time && <span style={{ marginLeft: 8 }}>· Scheduled: {new Date(order.pickup_time).toLocaleString('en-IN')}</span>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* QC Rejection Summary - Minimal tag as requested: "2 rejected · 2 passed thats alll enough" */}
       {isQcRejected && (

@@ -97,6 +97,26 @@
           }
         },
         {
+          "name": "Notify Pickup Arranged",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-api-key", "value": "{{apiKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rider_name\": \"Suresh (Logistics)\",\n  \"rider_phone\": \"+91 98400 99999\",\n  \"pickup_time\": \"2026-11-07T10:30:00.000Z\",\n  \"notes\": \"Logistics vehicle assigned for factory collection\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/ORD-2026-9812/pickup-arranged",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "ORD-2026-9812", "pickup-arranged"]
+            },
+            "description": "Customer App notifies that logistics has been scheduled. Displays PICKUP ARRANGED badge across Admin and Partner Apps."
+          }
+        },
+        {
           "name": "Customer Orders List by Phone",
           "request": {
             "method": "GET",

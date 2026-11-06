@@ -41,6 +41,7 @@ const STATUS_FILTERS = [
  { label: 'QC Sent', value: 'QC_SENT' },
  { label: 'QC Rejected', value: 'QC_REJECTED' },
  { label: 'Completed', value: 'COMPLETED' },
+ { label: 'Pickup Arranged', value: 'PICKUP_ARRANGED' },
 ];
 
 function careBadge(cat) {
@@ -167,7 +168,9 @@ export default function Orders() {
 
  const filtered = orders.filter(o => {
   if (statusFilter) {
-   if (statusFilter === 'COMPLETED') {
+   if (statusFilter === 'PICKUP_ARRANGED') {
+    if (o.status !== 'PICKUP_ARRANGED' && o.pickupStatus !== 'PICKUP_ARRANGED' && !o.pickupArranged) return false;
+   } else if (statusFilter === 'COMPLETED') {
     if (o.status !== 'COMPLETED' && o.status !== 'DELIVERED' && o.status !== 'READY_FOR_DELIVERY' && o.qcStatus !== 'QC_APPROVED') return false;
    } else if (statusFilter === 'QC_REJECTED') {
     if (o.status !== 'QC_REJECTED' && o.qcStatus !== 'QC_REJECTED') return false;
@@ -192,6 +195,7 @@ export default function Orders() {
   IN_PROCESS: orders.filter(o => o.status === 'IN_PROCESS').length,
   QC_SENT: orders.filter(o => o.status === 'QC_SENT' || o.qcStatus === 'QC_PENDING').length,
   COMPLETED: orders.filter(o => o.status === 'COMPLETED' || o.status === 'DELIVERED' || o.status === 'READY_FOR_DELIVERY' || o.qcStatus === 'QC_APPROVED').length,
+ PICKUP_ARRANGED: orders.filter(o => o.status === 'PICKUP_ARRANGED' || o.pickupStatus === 'PICKUP_ARRANGED' || o.pickupArranged).length,
  };
 
  const handleQuickAccept = async (orderId) => {
@@ -219,11 +223,34 @@ export default function Orders() {
  };
 
  const getOrderTheme = (order) => {
-  const isCompleted = order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.qcStatus === 'QC_APPROVED' || order.status === 'QC_APPROVED';
+  const isPickupArranged = order.status === 'PICKUP_ARRANGED' || order.pickupStatus === 'PICKUP_ARRANGED' || order.pickupArranged;
+  const isCompleted = !isPickupArranged && (order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.qcStatus === 'QC_APPROVED' || order.status === 'QC_APPROVED');
   const isQcRej = !isCompleted && (order.qcStatus === 'QC_REJECTED' || order.status === 'QC_REJECTED');
   const isQcSent = !isCompleted && !isQcRej && (order.status === 'QC_SENT' || order.qcStatus === 'QC_PENDING');
   const isInProc = !isCompleted && !isQcRej && !isQcSent && order.status === 'IN_PROCESS';
   const isAssigned = !isCompleted && !isQcRej && !isQcSent && !isInProc && (order.status === 'ASSIGNED' || order.status === 'RECEIVED');
+
+  if (isPickupArranged) {
+   return {
+    key: 'PICKUP_ARRANGED',
+    label: 'PICKUP ARRANGED',
+    badgeClass: 'status-pickup',
+    headerBg: '#4338ca',
+    bodyBg: '#eef2ff',
+    borderColor: '#a5b4fc',
+    customerColor: '#312e81',
+    accentColor: '#4f46e5',
+    badgeBg: 'rgba(255, 255, 255, 0.22)',
+    badgeColor: '#ffffff',
+    badgeBorder: 'rgba(255, 255, 255, 0.45)',
+    partnerBadgeBg: '#e0e7ff',
+    partnerBadgeColor: '#4338ca',
+    Icon: Truck,
+    showAccept: false,
+    showQc: false,
+    showDelivery: false,
+   };
+  }
 
   if (isCompleted) {
    return {
@@ -479,6 +506,15 @@ export default function Orders() {
    border="#fca5a5"
    active={statusFilter === 'QC_REJECTED'}
    onClick={() => setSearchParams(statusFilter === 'QC_REJECTED' ? '' : '?status=QC_REJECTED')}
+  />
+  <StatCard
+   label="Pickup Arranged"
+   value={stats.PICKUP_ARRANGED}
+   color="#4338ca"
+   bg="#eef2ff"
+   border="#a5b4fc"
+   active={statusFilter === 'PICKUP_ARRANGED'}
+   onClick={() => setSearchParams(statusFilter === 'PICKUP_ARRANGED' ? '' : '?status=PICKUP_ARRANGED')}
   />
   <StatCard
    label="Completed"

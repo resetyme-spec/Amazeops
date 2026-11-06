@@ -75,6 +75,7 @@ function customerLabel(name: string, category: string): React.ReactNode {
 
 function getBadgeInfo(status: string) {
   const s = (status || '').toUpperCase();
+  if (s === 'PICKUP_ARRANGED') return { label: 'PICKUP ARRANGED', bg: '#e0e7ff', color: '#4338ca', border: '#a5b4fc' };
   if (s === 'COMPLETED' || s === 'DELIVERED' || s === 'READY_FOR_DELIVERY') return { label: 'COMPLETED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
   if (s === 'QC_APPROVED') return { label: 'QC APPROVED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
   if (s === 'QC_PENDING' || s === 'QC_SENT') return { label: 'QC PENDING', bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' };
@@ -1167,7 +1168,9 @@ export default function OrderDetail() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {(() => {
-              const currentStatus = order.status || (subOrders.some(s => s.status === 'READY_FOR_DELIVERY') ? 'READY_FOR_DELIVERY' : 'RECEIVED');
+              const currentStatus = (order as any).pickupStatus === 'PICKUP_ARRANGED' || (order as any).pickupArranged || order.status === 'PICKUP_ARRANGED' || subOrders.some(s => s.status === 'PICKUP_ARRANGED')
+                ? 'PICKUP_ARRANGED'
+                : (order.status || (subOrders.some(s => s.status === 'READY_FOR_DELIVERY') ? 'READY_FOR_DELIVERY' : 'RECEIVED'));
               const b = getBadgeInfo(currentStatus);
               return (
                 <span style={{
@@ -1215,6 +1218,33 @@ export default function OrderDetail() {
           </div>
         </div>
       </div>
+
+      {/* Pickup Arranged Banner */}
+      {((order as any).pickupStatus === 'PICKUP_ARRANGED' || (order as any).pickupArranged || order.status === 'PICKUP_ARRANGED' || subOrders.some(s => s.status === 'PICKUP_ARRANGED')) && (
+        <div style={{
+          background: '#eef2ff',
+          border: '1.5px solid #a5b4fc',
+          borderRadius: 10,
+          padding: '14px 18px',
+          marginBottom: 24,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Truck size={18} color="#4f46e5" />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#4338ca' }}>Pickup Arranged by Customer App</div>
+            <div style={{ fontSize: 12, color: '#3730a3', marginTop: 2 }}>
+              Logistics pickup has been scheduled for this completed order.
+              {(order as any).rider_name && <span style={{ marginLeft: 8, fontWeight: 600 }}>· Rider: {(order as any).rider_name} ({(order as any).rider_phone || 'No phone'})</span>}
+              {(order as any).pickup_time && <span style={{ marginLeft: 8 }}>· Scheduled: {new Date((order as any).pickup_time).toLocaleString('en-IN')}</span>}
+              {(order as any).pickupArrangedAt && <span style={{ marginLeft: 8, color: '#6366f1' }}>· Arranged at {new Date((order as any).pickupArrangedAt).toLocaleString('en-IN')}</span>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ready for Delivery Banner */}
       {(order.status === 'READY_FOR_DELIVERY' || subOrders.some(s => s.status === 'READY_FOR_DELIVERY')) && (
