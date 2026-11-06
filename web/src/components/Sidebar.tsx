@@ -29,8 +29,13 @@ export function Sidebar() {
  return (
  <aside className="sidebar">
  <div className="sidebar-header">
- <h1 className="sidebar-title">Amaze Fab</h1>
- <span className="sidebar-subtitle">Operations</span>
+ <Link to="/" className="sidebar-logo-link" title="AmazeFab - Luxury Garment & Wardrobe Care">
+ <img
+ src="/amazefab_logo.png"
+ alt="AmazeFab - The Art of Care"
+ className="sidebar-brand-img"
+ />
+ </Link>
  </div>
  <nav className="sidebar-nav">
  {filteredItems.map(item => {
