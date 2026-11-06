@@ -1256,40 +1256,6 @@ const REJECTION_REASONS = [
                   }}
                 />
               </div>
-
-              {/* Defect Photo URL inputs */}
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
-                  Defect Photo Evidence (URLs or Image Links)
-                </label>
-                <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>
-                  Attach photo links showing the stain, wrinkle, or defect so the laundry partner can review it.
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {rejectionPhotos.map((photo, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <Camera size={16} color="#9ca3af" />
-                      <input
-                        type="text"
-                        placeholder={`Defect Photo ${i + 1} URL (e.g. https://... or data:...)`}
-                        value={photo}
-                        onChange={e => {
-                          const next = [...rejectionPhotos];
-                          next[i] = e.target.value;
-                          setRejectionPhotos(next);
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: '8px 12px',
-                          border: '1px solid #d1d5db',
-                          borderRadius: 6,
-                          fontSize: 12,
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
 
             {/* Modal Footer */}
