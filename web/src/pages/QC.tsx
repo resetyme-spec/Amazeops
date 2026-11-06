@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ShieldCheck, Search, CheckCircle2, XCircle, AlertTriangle, Eye, Image as ImageIcon,
-  MessageSquare, Camera, ChevronRight, Check, X, Tag
+  MessageSquare, Camera, ChevronRight, Check, X, Tag, Star, Sparkles
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
@@ -53,6 +53,48 @@ export default function QCPage() {
   const [selectedItem, setSelectedItem] = useState<QCQueueItem | null>(null);
 
   // Garment-wise rejection modal state
+  // Detailed QC Inspection Modal (QC Check Popup)
+  const [viewQcModal, setViewQcModal] = useState<{
+    open: boolean;
+    item: QCQueueItem | null;
+    garment: Garment | null;
+    update: any | null;
+    rejection: any | null;
+    isRejected: boolean;
+    isPassed: boolean;
+    isPending: boolean;
+  }>({
+    open: false,
+    item: null,
+    garment: null,
+    update: null,
+    rejection: null,
+    isRejected: false,
+    isPassed: false,
+    isPending: false,
+  });
+
+  const openViewQcModal = (
+    item: QCQueueItem,
+    garment: Garment,
+    update: any,
+    rejection: any,
+    isRejected: boolean,
+    isPassed: boolean,
+    isPending: boolean
+  ) => {
+    setViewQcModal({
+      open: true,
+      item,
+      garment,
+      update,
+      rejection,
+      isRejected,
+      isPassed,
+      isPending,
+    });
+  };
+
   const [rejectModal, setRejectModal] = useState<{
     open: boolean;
     item: QCQueueItem | null;
@@ -66,7 +108,34 @@ export default function QCPage() {
   const [submitting, setSubmitting] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
-  const REJECTION_REASONS = [
+  const tierColor: Record<string, string> = {
+  SIGNATURE: '#d97706',
+  GOLD: '#d97706',
+  PRISTINE: '#ea580c',
+  ORANGE: '#ea580c',
+  YELLOW: '#ea580c',
+  PREMIUM: '#2563eb',
+  BLUE: '#2563eb',
+};
+const tierBg: Record<string, string> = {
+  SIGNATURE: '#fef3c7',
+  GOLD: '#fef3c7',
+  PRISTINE: '#ffedd5',
+  ORANGE: '#ffedd5',
+  YELLOW: '#ffedd5',
+  PREMIUM: '#eff6ff',
+  BLUE: '#eff6ff',
+};
+
+const QUALITY_LABELS: Record<number, string> = {
+  5: '5/5 — Excellent (Like New)',
+  4: '4/5 — Good (Minimal Wear)',
+  3: '3/5 — Fair (Normal Wear)',
+  2: '2/5 — Average (Minor Fading / Pilling)',
+  1: '1/5 — Heavy Wear / Aged Fabric'
+};
+
+const REJECTION_REASONS = [
     'Stain not removed',
     'Wrinkles / Poor Pressing',
     'Fabric Damage / Tear',
@@ -288,6 +357,92 @@ export default function QCPage() {
     setSubmitting(false);
   };
 
+  // Pass Individual Garment QC
+  const handlePassGarmentQC = async (item: QCQueueItem, garmentId: string) => {
+    setSubmitting(true);
+    const actorName = user?.name || 'Admin';
+    const nowIso = new Date().toISOString();
+
+    try {
+      // 1. Update parent order's garments array
+      let allPassed = false;
+      try {
+        const orderRef = doc(db, 'orders', item.orderId);
+        const orderSnap = await getDoc(orderRef);
+        if (orderSnap.exists()) {
+          const oData = orderSnap.data();
+          const updatedGarments = (oData.garments || []).map((gm: any) => {
+            if (gm.garmentId === garmentId) {
+              const clone = { ...gm, status: 'QC_PASSED', qcStatus: 'QC_PASSED' };
+              delete clone.qcRejection;
+              return clone;
+            }
+            return gm;
+          });
+
+          allPassed = updatedGarments.length > 0 && updatedGarments.every((gm: any) => gm.qcStatus === 'QC_PASSED' || gm.status === 'QC_PASSED');
+          const hasAnyRejected = updatedGarments.some((gm: any) => gm.qcStatus === 'QC_REJECTED' || !!gm.qcRejection);
+
+          const updatePayload: any = { garments: updatedGarments };
+          if (allPassed && !hasAnyRejected) {
+            updatePayload.status = 'COMPLETED';
+            updatePayload.qcStatus = 'QC_APPROVED';
+            updatePayload.approvedAt = nowIso;
+            updatePayload.approvedBy = actorName;
+          }
+          await updateDoc(orderRef, updatePayload);
+        }
+      } catch (e) {
+        console.warn('Error updating order garments:', e);
+      }
+
+      // 2. Update qcRecords doc
+      const qcRef = doc(db, 'qcRecords', item.id);
+      const updatedRejected = { ...(item.rejectedGarments || {}) };
+      delete updatedRejected[garmentId];
+
+      const qcUpdatePayload: any = {
+        rejectedGarments: updatedRejected,
+        updatedAt: nowIso,
+      };
+      if (allPassed) {
+        qcUpdatePayload.status = 'QC_APPROVED';
+        qcUpdatePayload.approvedAt = nowIso;
+        qcUpdatePayload.approvedBy = actorName;
+      }
+      await updateDoc(qcRef, qcUpdatePayload);
+
+      // 3. Update subOrders doc
+      try {
+        const subSnap = await getDocs(collection(db, 'subOrders'));
+        const targetSub = subSnap.docs.find(d => {
+          const dData = d.data();
+          return (d.id === item.subOrderId || d.id === item.orderId || dData.orderId === item.orderId) &&
+            (dData.garmentIds || []).includes(garmentId);
+        });
+        if (targetSub && allPassed) {
+          await updateDoc(targetSub.ref, {
+            status: 'COMPLETED',
+            qcStatus: 'QC_APPROVED',
+            approvedAt: nowIso,
+            approvedBy: actorName,
+            updatedAt: nowIso,
+          });
+        }
+      } catch (e) {
+        console.warn('Error updating subOrder:', e);
+      }
+
+      setViewQcModal({ open: false, item: null, garment: null, update: null, rejection: null, isRejected: false, isPassed: false, isPending: false });
+      await loadQCQueue();
+    } catch (err: any) {
+      console.error('Failed to pass garment QC:', err);
+      alert('Failed to pass garment QC: ' + (err.message || String(err)));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Approve Entire Order QC
   const handleApproveQC = async (item: QCQueueItem) => {
     if (!confirm(`Approve Quality Check for order ${item.orderNumber}?`)) return;
@@ -480,17 +635,10 @@ export default function QCPage() {
                   </div>
 
                   {/* Actions for this QC submission */}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {item.status === 'QC_PENDING' && (
-                      <button
-                        className="btn btn-primary"
-                        style={{ background: '#10b981', borderColor: '#10b981', fontSize: 13, padding: '7px 16px' }}
-                        onClick={() => handleApproveQC(item)}
-                        disabled={submitting}
-                      >
-                        <Check size={16} style={{ marginRight: 6 }} /> Approve All QC
-                      </button>
-                    )}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: 8 }}>
+                      Individual Inspection Required
+                    </span>
                   </div>
                 </div>
 
@@ -613,42 +761,33 @@ export default function QCPage() {
                                 )}
                               </td>
                               <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                                {!isGarmentRejected && !isApproved && (
-                                  <button
-                                    onClick={() => openGarmentRejectModal(item, update.garmentId, garment?.category || 'Garment')}
-                                    style={{
-                                      padding: '5px 12px',
-                                      borderRadius: 6,
-                                      border: '1px solid #fca5a5',
-                                      background: '#fef2f2',
-                                      color: '#dc2626',
-                                      fontSize: 12,
-                                      fontWeight: 600,
-                                      cursor: 'pointer',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: 4,
-                                    }}
-                                  >
-                                    <XCircle size={14} /> Reject Garment
-                                  </button>
-                                )}
-                                {isGarmentRejected && (
-                                  <button
-                                    onClick={() => openGarmentRejectModal(item, update.garmentId, garment?.category || 'Garment')}
-                                    style={{
-                                      padding: '4px 10px',
-                                      borderRadius: 6,
-                                      border: '1px solid #d1d5db',
-                                      background: '#fff',
-                                      color: '#4b5563',
-                                      fontSize: 11,
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    Edit Notes / Photos
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => openViewQcModal(
+                                    item,
+                                    (garment || { garmentId: update.garmentId, category: '', brand: update.brand || '', serviceType: '' }) as any,
+                                    update,
+                                    gRejection,
+                                    isGarmentRejected,
+                                    isApproved || (garment as any)?.qcStatus === 'QC_PASSED',
+                                    !isGarmentRejected && !isApproved && (garment as any)?.qcStatus !== 'QC_PASSED'
+                                  )}
+                                  style={{
+                                    padding: '6px 14px',
+                                    borderRadius: 6,
+                                    border: isGarmentRejected ? '1.5px solid #fca5a5' : isApproved ? '1.5px solid #86efac' : '1.5px solid #3b82f6',
+                                    background: isGarmentRejected ? '#fef2f2' : isApproved ? '#f0fdf4' : '#eff6ff',
+                                    color: isGarmentRejected ? '#dc2626' : isApproved ? '#16a34a' : '#1d4ed8',
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    boxShadow: '0 1px 2px rgba(59,130,246,0.1)',
+                                  }}
+                                >
+                                  <Eye size={14} /> QC Check
+                                </button>
                               </td>
                             </tr>
                           );
@@ -660,6 +799,368 @@ export default function QCPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* MODAL: Detailed QC Inspection Details (QC Check Dialog) */}
+      {viewQcModal.open && viewQcModal.garment && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setViewQcModal({ open: false, item: null, garment: null, update: null, rejection: null, isRejected: false, isPassed: false, isPending: false })}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: 16,
+              width: '100%',
+              maxWidth: 720,
+              maxHeight: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+              overflow: 'hidden',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {(() => {
+              const g = viewQcModal.garment;
+              const upd = viewQcModal.update || {};
+              const rawCat = (g.category || viewQcModal.item?.careCategory || 'PREMIUM').toUpperCase();
+              const c = rawCat.includes('SIGNATURE') || rawCat === 'GOLD' ? 'SIGNATURE' : rawCat.includes('PRISTINE') || rawCat === 'ORANGE' || rawCat === 'YELLOW' ? 'PRISTINE' : 'PREMIUM';
+              const mLabel = c === 'SIGNATURE' ? 'Signature' : c === 'PRISTINE' ? 'Pristine' : 'Premium';
+              const mColor = tierColor[c] || '#2563eb';
+              const brand = upd.brand || g.brand || '—';
+              const quality = typeof upd.quality === 'number' ? upd.quality : 5;
+              const stains: string[] = Array.isArray(upd.stains) ? upd.stains : (upd.stain ? [upd.stain] : (upd.stainTypes || []));
+              const comments = upd.comments || '';
+              const photos = upd.photos || {};
+              const photoSlots = [
+                { slot: 'front', label: '1. Front Photo', url: photos.front },
+                { slot: 'back', label: '2. Back Photo', url: photos.back },
+                { slot: 'other', label: '3. Other Photo', url: photos.other },
+              ];
+              const rejection = viewQcModal.rejection;
+
+              return (
+                <>
+                  {/* Header */}
+                  <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 8, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Eye size={20} color="#2563eb" />
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>
+                            QC Inspection Details — {mLabel}
+                          </h3>
+                          {viewQcModal.isPassed ? (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <CheckCircle2 size={12} /> PASSED
+                            </span>
+                          ) : viewQcModal.isRejected ? (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', background: '#fee2e2', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <XCircle size={12} /> REJECTED
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#d97706', background: '#fef3c7', padding: '2px 8px', borderRadius: 6 }}>
+                              PENDING REVIEW
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2, fontFamily: 'monospace' }}>
+                          ID: {g.garmentId} {(g as any).qrCode ? `· QR: ${(g as any).qrCode}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setViewQcModal({ open: false, item: null, garment: null, update: null, rejection: null, isRejected: false, isPassed: false, isPending: false })}
+                      style={{ background: 'none', border: 'none', fontSize: 22, color: '#9ca3af', cursor: 'pointer', padding: 4 }}
+                    >
+                      &times;
+                    </button>
+                  </div>
+
+                  {/* Scrollable Body */}
+                  <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Meta details bar */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px' }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase', fontWeight: 600 }}>Care Category</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: mColor }}>{mLabel}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase', fontWeight: 600 }}>Service</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{g.serviceType || 'Dry clean'}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase', fontWeight: 600 }}>Brand</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{brand || '—'}</div>
+                      </div>
+                    </div>
+
+                    {/* Quality of Garment & Stains Section */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
+                          <Star size={15} color="#f59e0b" fill="#f59e0b" /> Quality of Garment
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 16, color: '#f59e0b', letterSpacing: 2 }}>
+                            {'⭐'.repeat(Math.max(1, Math.min(5, quality)))}
+                          </span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '1px 6px', borderRadius: 4 }}>
+                            {QUALITY_LABELS[quality] || `${quality}/5`}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
+                          <Sparkles size={15} color="#d97706" /> Stain Types Identified
+                        </div>
+                        {stains.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                            {stains.map((s: string, sIdx: number) => (
+                              <span key={sIdx} style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '2px 8px', borderRadius: 8, fontWeight: 700 }}>
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>None specified</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Partner QC Comments */}
+                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
+                        <MessageSquare size={15} color="#475569" /> Partner QC Notes & Comments
+                      </div>
+                      {comments ? (
+                        <div style={{ background: '#f8fafc', border: '1px solid #f1f5f9', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: '#334155', lineHeight: 1.5 }}>
+                          "{comments}"
+                        </div>
+                      ) : (
+                        <div style={{ color: '#94a3b8', fontSize: 12, fontStyle: 'italic' }}>
+                          No comments submitted by partner.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Uploaded Photos Section */}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#111827' }}>
+                          <Camera size={16} color="#2563eb" /> Uploaded QC Photos ({photoSlots.filter(p => p.url).length} / 3)
+                        </div>
+                        <span style={{ fontSize: 11, color: '#6b7280' }}>Click any photo to enlarge</span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                        {photoSlots.map(({ slot, label, url }) => (
+                          <div
+                            key={slot}
+                            style={{
+                              background: '#f8fafc',
+                              border: url ? '1.5px solid #cbd5e1' : '1px dashed #cbd5e1',
+                              borderRadius: 8,
+                              padding: 10,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              position: 'relative',
+                            }}
+                          >
+                            <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{label}</span>
+                              {url && url.includes('amazonaws.com') && (
+                                <span style={{ fontSize: 9, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '1px 4px', borderRadius: 4, fontWeight: 700 }}>
+                                  ☁️ S3
+                                </span>
+                              )}
+                            </div>
+
+                            {url ? (
+                              <div
+                                onClick={() => setPhotoPreview(url)}
+                                style={{
+                                  width: '100%',
+                                  height: 140,
+                                  borderRadius: 6,
+                                  overflow: 'hidden',
+                                  cursor: 'pointer',
+                                  position: 'relative',
+                                  background: '#000',
+                                }}
+                              >
+                                <img
+                                  src={url}
+                                  alt={label}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                                <div style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  background: 'rgba(0,0,0,0.3)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: '#fff',
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  gap: 4
+                                }}>
+                                  <Eye size={14} /> View
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{
+                                width: '100%',
+                                height: 140,
+                                borderRadius: 6,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                color: '#94a3b8',
+                                background: '#f1f5f9'
+                              }}>
+                                <ImageIcon size={28} />
+                                <span style={{ fontSize: 11, fontStyle: 'italic' }}>Not uploaded</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Existing Rejection Details Callout */}
+                    {rejection && (
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>
+                          <XCircle size={15} /> Current Rejection Feedback
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>
+                          Reason: {rejection.reason || 'Defect Identified'}
+                        </div>
+                        {rejection.comments && (
+                          <div style={{ fontSize: 12, color: '#7f1d1d', marginBottom: 6 }}>
+                            <strong>Admin Note:</strong> {rejection.comments}
+                          </div>
+                        )}
+                        {rejection.photos && rejection.photos.length > 0 && (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                            {rejection.photos.map((pUrl: string, pIdx: number) => (
+                              <button
+                                key={pIdx}
+                                type="button"
+                                onClick={() => setPhotoPreview(pUrl)}
+                                style={{ border: '1px solid #fca5a5', background: '#fff', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: '#dc2626', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              >
+                                <Camera size={12} /> Defect Photo {pIdx + 1}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Modal Footer with Actions */}
+                  <div style={{ padding: '14px 20px', borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => setViewQcModal({ open: false, item: null, garment: null, update: null, rejection: null, isRejected: false, isPassed: false, isPending: false })}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: 6,
+                        border: '1px solid #d1d5db',
+                        background: '#fff',
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: '#374151',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Close
+                    </button>
+
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetItem = viewQcModal.item;
+                          const targetGarmentId = g.garmentId;
+                          const targetCategory = g.category || 'Garment';
+                          setViewQcModal({ open: false, item: null, garment: null, update: null, rejection: null, isRejected: false, isPassed: false, isPending: false });
+                          if (targetItem) {
+                            openGarmentRejectModal(targetItem, targetGarmentId, targetCategory);
+                          }
+                        }}
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: 6,
+                          border: '1px solid #fca5a5',
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <XCircle size={15} /> {viewQcModal.isRejected ? 'Edit Rejection' : 'Reject QC'}
+                      </button>
+
+                      {!viewQcModal.isPassed && (
+                        <button
+                          type="button"
+                          disabled={submitting}
+                          onClick={async () => {
+                            if (viewQcModal.item) {
+                              await handlePassGarmentQC(viewQcModal.item, g.garmentId);
+                            }
+                          }}
+                          style={{
+                            padding: '8px 18px',
+                            borderRadius: 6,
+                            border: 'none',
+                            background: '#16a34a',
+                            color: '#fff',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            boxShadow: '0 2px 4px rgba(22,163,74,0.2)',
+                            opacity: submitting ? 0.7 : 1,
+                          }}
+                        >
+                          <CheckCircle2 size={15} /> {submitting ? 'Passing...' : 'Pass QC'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
         </div>
       )}
 
