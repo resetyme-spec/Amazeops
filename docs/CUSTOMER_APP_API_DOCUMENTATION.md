@@ -332,46 +332,114 @@ x-api-key: amaze-fab-super-admin-key-2026
 
 ---
 
-### 3.4 Live Order Tracking (`GET /api/orders/:id`)
-> **Use Case:** Customer App queries live status, per-garment processing, and Quality Check (QC) inspection photos.
+### 3.4 Live Order & Multi-Partner Tracking (`GET /api/orders/:id`)
+> **Use Case:** Query real-time order lifecycle status, including **individual live status and 5-step lifecycle progression for each assigned partner factory** and assigned garments.
 
 * **Method:** `GET`
-* **Path:** `/api/orders/:id`
-* **Example:** `GET /api/orders/ORD-2026-9812`
+* **Path:** `/api/orders/:id` (Accepts `order_no` like `ORD-2026-9812` or `AF-50281`, or internal Firestore ID)
+* **Example:** `GET https://amaze-ops.web.app/api/orders/ORD-2026-9812`
 * **Headers:** `x-api-key: amaze-fab-super-admin-key-2026`
 
 #### Response (`200 OK`)
 ```json
 {
   "success": true,
-  "order": {
-    "orderId": "ORD-2026-9812",
-    "status": "QC_APPROVED",
-    "careCategory": "SIGNATURE",
-    "customer": {
-      "name": "Ramesh Kumar",
-      "phone": "+91 98765 43210"
-    },
-    "garments": [
-      {
-        "garmentId": "GAR-ORD-9812-1",
-        "qrCode": "AMZ-TAG-78421",
-        "garmentType": "SILK_SAREE",
-        "serviceType": "Dry Clean",
-        "category": "GOLD",
-        "status": "QC_APPROVED",
-        "qcStatus": "PASSED",
-        "solventsUsed": ["K4 Eco-Solvent", "Silk Silicone Finish"],
-        "inspectionPhotos": {
-          "front": "https://storage.googleapis.com/amaze-ops/QC/ORD-2026-9812/GAR-1/front.jpg",
-          "back": "https://storage.googleapis.com/amaze-ops/QC/ORD-2026-9812/GAR-1/back.jpg"
+  "order_no": "ORD-2026-9812",
+  "overall_status": "IN_PROCESS",
+  "total_sub_orders": 2,
+  "timeline": [
+    { "stage": "ASSIGNED", "name": "Assigned", "step": 1, "progress_pct": 20, "completed": true, "current": false, "timestamp": "2026-11-06T18:00:00.000Z" },
+    { "stage": "IN_PROCESS", "name": "Accepted & Processing", "step": 2, "progress_pct": 40, "completed": true, "current": true, "timestamp": "2026-11-06T18:15:00.000Z" },
+    { "stage": "QC_PENDING", "name": "QC Submitted", "step": 3, "progress_pct": 60, "completed": false, "current": false, "timestamp": null },
+    { "stage": "QC_APPROVED", "name": "QC Verified", "step": 4, "progress_pct": 80, "completed": false, "current": false, "timestamp": null },
+    { "stage": "COMPLETED", "name": "Completed", "step": 5, "progress_pct": 100, "completed": false, "current": false, "timestamp": null }
+  ],
+  "partner_statuses": [
+    {
+      "sub_order_no": "ORD-2026-9812-P1-1",
+      "category": "BLUE",
+      "garment_count": 3,
+      "status": "IN_PROCESS",
+      "status_label": "Accepted & Processing",
+      "current_step": 2,
+      "progress_pct": 40,
+      "lifecycle": [
+        { "step": 1, "name": "Assigned", "status": "COMPLETED", "progress_pct": 20 },
+        { "step": 2, "name": "Accepted & Processing", "status": "CURRENT", "progress_pct": 40 },
+        { "step": 3, "name": "QC Submitted", "status": "PENDING", "progress_pct": 60 },
+        { "step": 4, "name": "QC Verified", "status": "PENDING", "progress_pct": 80 },
+        { "step": 5, "name": "Completed", "status": "PENDING", "progress_pct": 100 }
+      ],
+      "partner": {
+        "id": "PRT-001",
+        "name": "ABC Rapid Laundry (Partner A)",
+        "phone": "+91 98400 11111",
+        "address": "12, Industrial Estate, Guindy, Chennai",
+        "geo_location": {
+          "latitude": 13.0067,
+          "longitude": 80.2030
+        },
+        "distance_from_hub_km": 4.2
+      },
+      "garments": [
+        {
+          "garment_id_code": "GAR-ORD-9812-1",
+          "qr_code": "AMZ-TAG-78421",
+          "garment_type": "SHIRT",
+          "category": "BLUE",
+          "service_type": "Wash & Iron",
+          "status": "IN_PROCESS"
         }
-      }
-    ],
-    "createdAt": "2026-11-05T09:30:00.000Z"
-  }
+      ]
+    },
+    {
+      "sub_order_no": "ORD-2026-9812-P2-2",
+      "category": "GOLD",
+      "garment_count": 2,
+      "status": "ASSIGNED",
+      "status_label": "Assigned",
+      "current_step": 1,
+      "progress_pct": 20,
+      "lifecycle": [
+        { "step": 1, "name": "Assigned", "status": "CURRENT", "progress_pct": 20 },
+        { "step": 2, "name": "Accepted & Processing", "status": "PENDING", "progress_pct": 40 },
+        { "step": 3, "name": "QC Submitted", "status": "PENDING", "progress_pct": 60 },
+        { "step": 4, "name": "QC Verified", "status": "PENDING", "progress_pct": 80 },
+        { "step": 5, "name": "Completed", "status": "PENDING", "progress_pct": 100 }
+      ],
+      "partner": {
+        "id": "PRT-002",
+        "name": "Premier Silk & Dry Cleaners (Partner B)",
+        "phone": "+91 98400 22222",
+        "address": "88, Sterling Road, Nungambakkam, Chennai",
+        "geo_location": {
+          "latitude": 13.0604,
+          "longitude": 80.2376
+        },
+        "distance_from_hub_km": 2.8
+      },
+      "garments": [
+        {
+          "garment_id_code": "GAR-ORD-9812-2",
+          "qr_code": "AMZ-TAG-78422",
+          "garment_type": "SILK_SAREE",
+          "category": "GOLD",
+          "service_type": "Dry Clean",
+          "status": "ASSIGNED"
+        }
+      ]
+    }
+  ]
 }
 ```
+
+#### Multi-Partner Lifecycle Guide (Standard 5 Steps)
+Each assigned partner progresses independently through these 5 lifecycle milestones:
+1. **`1. Assigned`** (20%) — Partner factory has been assigned based on fabric category & GPS routing.
+2. **`2. Accepted & Processing`** (40%) — Partner accepted the garments and processing has begun.
+3. **`3. QC Submitted`** (60%) — Partner finished work and submitted QC photos for inspection.
+4. **`4. QC Verified`** (80%) — Operations inspector approved the quality check.
+5. **`5. Completed`** (100%) — Garments completed and ready for final hub consolidation.
 
 ---
 

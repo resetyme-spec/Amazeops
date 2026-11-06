@@ -571,14 +571,20 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
             return;
         }
     }
-    // GET /orders/:id (track order)
+    // GET /orders/:id (track order with partner live statuses)
     const orderMatch = cleanPath.match(/^\/orders\/([^/]+)$/);
     if (req.method === 'GET' && orderMatch) {
         try {
             const targetId = orderMatch[1];
             let orderDoc = await db.collection('orders').doc(targetId).get();
             if (!orderDoc.exists) {
-                const querySnap = await db.collection('orders').where('orderNumber', '==', targetId).limit(1).get();
+                let querySnap = await db.collection('orders').where('orderNumber', '==', targetId).limit(1).get();
+                if (querySnap.empty) {
+                    querySnap = await db.collection('orders').where('order_no', '==', targetId).limit(1).get();
+                }
+                if (querySnap.empty) {
+                    querySnap = await db.collection('orders').where('orderId', '==', targetId).limit(1).get();
+                }
                 if (!querySnap.empty) {
                     orderDoc = querySnap.docs[0];
                 }
@@ -589,49 +595,145 @@ exports.api = (0, https_1.onRequest)({ cors: true, region: 'us-central1' }, asyn
             }
             const orderData = { id: orderDoc.id, ...orderDoc.data() };
             const curStatus = orderData.status || 'RECEIVED';
-            // Enrich with subOrders if not already embedded
-            if (!orderData.subOrders || orderData.subOrders.length === 0) {
-                let subsSnap = await db.collection('subOrders').where('orderId', '==', orderDoc.id).get();
-                if (subsSnap.empty && orderData.orderNumber) {
-                    subsSnap = await db.collection('subOrders').where('mainOrderNumber', '==', orderData.orderNumber).get();
+            // Fetch subOrders from Firestore if available
+            let subsSnap = await db.collection('subOrders').where('orderId', '==', orderDoc.id).get();
+            if (subsSnap.empty && orderData.orderNumber) {
+                subsSnap = await db.collection('subOrders').where('mainOrderNumber', '==', orderData.orderNumber).get();
+            }
+            if (subsSnap.empty && orderData.order_no) {
+                subsSnap = await db.collection('subOrders').where('mainOrderNumber', '==', orderData.order_no).get();
+            }
+            const rawSubs = !subsSnap.empty
+                ? subsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+                : (orderData.subOrders || []);
+            // Fetch partners lookup map for full partner details (phone, address, geo)
+            const partnersMap = new Map();
+            try {
+                const pSnap = await db.collection('partners').get();
+                pSnap.docs.forEach(pDoc => {
+                    partnersMap.set(pDoc.id, { id: pDoc.id, ...pDoc.data() });
+                });
+            }
+            catch (e) { }
+            // 5-Step Lifecycle Calculator
+            const getPartnerStep = (soStatus, qcStatus) => {
+                const st = (soStatus || '').toUpperCase();
+                const qc = (qcStatus || '').toUpperCase();
+                if (st === 'COMPLETED' || st === 'DELIVERED') {
+                    return { step: 5, label: 'Completed', pct: 100 };
                 }
-                if (!subsSnap.empty) {
-                    orderData.subOrders = subsSnap.docs.map(d => {
-                        const data = d.data();
-                        return {
-                            subOrderNumber: data.subOrderNumber || data.subOrderCode || d.id,
-                            subOrderCode: data.subOrderCode || data.subOrderNumber || d.id,
-                            partnerName: data.partnerName || '',
-                            partnerCode: data.partnerCode || '',
-                            partnerId: data.partnerId || '',
-                            status: data.status || 'ASSIGNED',
-                            partnerGeoLocation: data.partnerGeoLocation || null,
-                            distance: data.distance || (data.distanceKm != null ? `${data.distanceKm} km` : ''),
-                            distanceKm: data.distanceKm != null ? Number(data.distanceKm) : null,
-                            careCategory: data.careCategory || '',
-                            garmentCount: data.garmentCount || (Array.isArray(data.garmentIds) ? data.garmentIds.length : 0),
-                            garmentIds: data.garmentIds || [],
-                        };
-                    });
+                if (st === 'QC_APPROVED' || st === 'QC_VERIFIED' || qc === 'QC_APPROVED' || qc === 'QC_VERIFIED' || qc === 'PASSED') {
+                    return { step: 4, label: 'QC Verified', pct: 80 };
+                }
+                if (st === 'QC_REJECTED' || qc === 'QC_REJECTED' || qc === 'FAILED') {
+                    return { step: 4, label: 'QC Rejected (Rework)', pct: 80 };
+                }
+                if (st === 'QC_PENDING' || st === 'QC_SENT' || qc === 'SUBMITTED' || qc === 'PENDING') {
+                    return { step: 3, label: 'QC Submitted', pct: 60 };
+                }
+                if (st === 'IN_PROCESS' || st === 'ACCEPTED' || st === 'PROCESSING') {
+                    return { step: 2, label: 'Accepted & Processing', pct: 40 };
+                }
+                return { step: 1, label: 'Assigned', pct: 20 };
+            };
+            const allOrderGarments = orderData.garments || [];
+            const partnerStatuses = rawSubs.map((so) => {
+                const pInfo = partnersMap.get(so.partnerId) || {};
+                const pGeo = so.partnerGeoLocation || (pInfo.latitude && pInfo.longitude ? { latitude: pInfo.latitude, longitude: pInfo.longitude } : null) || pInfo.geoLocation || null;
+                const stepInfo = getPartnerStep(so.status, so.qcStatus);
+                const assignedGarmentIds = so.garmentIds || [];
+                const matchedGarments = allOrderGarments.filter((g) => {
+                    const gId = g.garment_id_code || g.garmentId;
+                    return assignedGarmentIds.length === 0 || assignedGarmentIds.includes(gId);
+                });
+                const fiveSteps = [
+                    { step: 1, name: 'Assigned', status: stepInfo.step >= 1 ? (stepInfo.step > 1 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 20 },
+                    { step: 2, name: 'Accepted & Processing', status: stepInfo.step >= 2 ? (stepInfo.step > 2 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 40 },
+                    { step: 3, name: 'QC Submitted', status: stepInfo.step >= 3 ? (stepInfo.step > 3 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 60 },
+                    { step: 4, name: 'QC Verified', status: stepInfo.step >= 4 ? (stepInfo.step > 4 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 80 },
+                    { step: 5, name: 'Completed', status: stepInfo.step === 5 ? 'COMPLETED' : 'PENDING', progress_pct: 100 }
+                ];
+                return {
+                    sub_order_no: so.subOrderCode || so.subOrderNumber || so.id,
+                    category: so.careCategory || so.garmentCategory || 'STANDARD',
+                    garment_count: matchedGarments.length || so.garmentCount || assignedGarmentIds.length || 0,
+                    status: so.status || 'ASSIGNED',
+                    status_label: stepInfo.label,
+                    current_step: stepInfo.step,
+                    progress_pct: stepInfo.pct,
+                    lifecycle: fiveSteps,
+                    partner: {
+                        id: so.partnerId || pInfo.id || '',
+                        name: so.partnerName || pInfo.companyName || pInfo.contactPerson || pInfo.name || 'Partner',
+                        phone: so.partnerPhone || pInfo.phone || '',
+                        address: so.partnerAddress || pInfo.address || '',
+                        geo_location: pGeo,
+                        distance_from_hub_km: so.distanceKm != null ? Math.round(Number(so.distanceKm) * 10) / 10 : null,
+                    },
+                    garments: matchedGarments.map((g) => ({
+                        garment_id_code: g.garment_id_code || g.garmentId,
+                        qr_code: g.qr_code || g.qrCode,
+                        garment_type: g.garment_type || g.garmentType,
+                        category: g.category || g.garmentCategory,
+                        service_type: g.service_type || g.serviceType,
+                        status: g.status || so.status || 'PENDING',
+                    })),
+                };
+            });
+            // Calculate overall order status based on partner sub-orders
+            let overallStatus = curStatus;
+            if (partnerStatuses.length > 0) {
+                if (partnerStatuses.every((p) => p.status === 'COMPLETED')) {
+                    overallStatus = 'COMPLETED';
+                }
+                else if (partnerStatuses.some((p) => p.status === 'QC_REJECTED')) {
+                    overallStatus = 'QC_REJECTED';
+                }
+                else if (partnerStatuses.every((p) => p.status === 'QC_APPROVED')) {
+                    overallStatus = 'QC_APPROVED';
+                }
+                else if (partnerStatuses.some((p) => p.status === 'QC_PENDING' || p.current_step >= 3)) {
+                    overallStatus = 'QC_PENDING';
+                }
+                else if (partnerStatuses.some((p) => p.status === 'IN_PROCESS' || p.current_step >= 2)) {
+                    overallStatus = 'IN_PROCESS';
+                }
+                else {
+                    overallStatus = 'ASSIGNED';
                 }
             }
-            const stages = ['RECEIVED', 'ASSIGNED', 'IN_PROCESS', 'QC_PENDING', 'COMPLETED'];
-            const curIdx = stages.indexOf(curStatus);
+            const stages = [
+                { key: 'ASSIGNED', name: 'Assigned', step: 1, pct: 20 },
+                { key: 'IN_PROCESS', name: 'Accepted & Processing', step: 2, pct: 40 },
+                { key: 'QC_PENDING', name: 'QC Submitted', step: 3, pct: 60 },
+                { key: 'QC_APPROVED', name: 'QC Verified', step: 4, pct: 80 },
+                { key: 'COMPLETED', name: 'Completed', step: 5, pct: 100 }
+            ];
+            const stageKeys = stages.map(s => s.key);
+            const curIdx = stageKeys.indexOf(overallStatus) !== -1 ? stageKeys.indexOf(overallStatus) : 0;
             const timeline = stages.map((st, idx) => ({
-                stage: st,
+                stage: st.key,
+                name: st.name,
+                step: st.step,
+                progress_pct: st.pct,
                 completed: idx <= curIdx,
                 current: idx === curIdx,
                 timestamp: idx <= curIdx ? (orderData.updatedAt || orderData.createdAt) : null
             }));
             res.status(200).json({
                 success: true,
-                orderId: orderData.order_no || orderData.id,
-                mainOrderNumber: orderData.orderNumber || orderData.id,
-                status: curStatus,
-                totalSubOrders: (orderData.subOrders || []).length,
-                subOrders: orderData.subOrders || [],
+                order_no: orderData.order_no || orderData.orderNumber || orderData.id,
+                overall_status: overallStatus,
+                status: overallStatus,
+                total_sub_orders: partnerStatuses.length,
+                partner_statuses: partnerStatuses,
                 timeline,
-                order: orderData
+                // Backward compatibility keys
+                orderId: orderData.order_no || orderData.orderNumber || orderData.id,
+                mainOrderNumber: orderData.orderNumber || orderData.id,
+                totalSubOrders: partnerStatuses.length,
+                subOrders: rawSubs,
+                order: orderData,
             });
             return;
         }
