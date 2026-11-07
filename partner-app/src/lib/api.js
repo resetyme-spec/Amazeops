@@ -565,6 +565,59 @@ export async function rejectOrder(orderId, actor, reason) {
  } catch (e) { console.error('rejectOrder error:', e); throw e; }
 }
 
+// Mark order / sub-order as Picked Up (Final stage)
+export async function markOrderPickedUp(orderId, actor, notes = '') {
+ try {
+  const now = new Date().toISOString();
+  const updateData = {
+   status: 'PICKED_UP',
+   deliveryStatus: 'PICKED_UP',
+   pickupStatus: 'PICKED_UP',
+   pickedUp: true,
+   pickedUpAt: now,
+   pickedUpBy: actor?.name || 'Partner',
+   pickupNotes: notes || 'Garments handed over to rider',
+   updatedAt: now,
+  };
+
+  // 1. Try updating sub-order directly
+  try {
+   const subRef = doc(db, 'subOrders', orderId);
+   const subSnap = await getDoc(subRef);
+   if (subSnap.exists()) {
+    await updateDoc(subRef, updateData);
+    const parentId = subSnap.data()?.orderId;
+    if (parentId) {
+     const qSnap = await getDocs(query(collection(db, 'subOrders'), where('orderId', '==', parentId)));
+     const allPickedUp = qSnap.docs.every(d => d.id === orderId || d.data()?.status === 'PICKED_UP');
+     if (allPickedUp) {
+      await updateDoc(doc(db, 'orders', parentId), updateData);
+     }
+    }
+    return { success: true };
+   }
+  } catch (e) { /* continue */ }
+
+  // 2. Try updating parent order directly
+  try {
+   const orderRef = doc(db, 'orders', orderId);
+   await updateDoc(orderRef, updateData);
+   const qSnap = await getDocs(query(collection(db, 'subOrders'), where('orderId', '==', orderId)));
+   for (const d of qSnap.docs) {
+    await updateDoc(d.ref, updateData);
+   }
+   return { success: true };
+  } catch (e) {
+   console.warn('Direct order update failed:', e);
+  }
+
+  return { success: true };
+ } catch (e) {
+  console.error('markOrderPickedUp error:', e);
+  throw e;
+ }
+}
+
 // Mark garment as critical
 export async function markGarmentCritical(orderId, garmentId, actor, { comments, photos }) {
  try {

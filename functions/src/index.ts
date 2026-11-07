@@ -657,16 +657,19 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
     });
    } catch (e) {}
 
-   // 5-Step Lifecycle Calculator
+   // 6-Step Lifecycle Calculator
    const getPartnerStep = (soStatus: string, qcStatus?: string) => {
     const st = (soStatus || '').toUpperCase();
     const qc = (qcStatus || '').toUpperCase();
 
+    if (st === 'PICKED_UP') {
+     return { step: 6, label: 'Picked Up (Final)', pct: 100 };
+    }
     if (st === 'PICKUP_ARRANGED') {
-     return { step: 5, label: 'Pickup Arranged', pct: 100 };
+     return { step: 5, label: 'Pickup Arranged', pct: 90 };
     }
     if (st === 'COMPLETED' || st === 'DELIVERED') {
-     return { step: 5, label: 'Completed', pct: 100 };
+     return { step: 5, label: 'Completed', pct: 85 };
     }
     if (st === 'QC_APPROVED' || st === 'QC_VERIFIED' || qc === 'QC_APPROVED' || qc === 'QC_VERIFIED' || qc === 'PASSED') {
      return { step: 4, label: 'QC Verified', pct: 80 };
@@ -696,12 +699,13 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
      return assignedGarmentIds.length === 0 || assignedGarmentIds.includes(gId);
     });
 
-    const fiveSteps = [
-     { step: 1, name: 'Assigned', status: stepInfo.step >= 1 ? (stepInfo.step > 1 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 20 },
-     { step: 2, name: 'Accepted & Processing', status: stepInfo.step >= 2 ? (stepInfo.step > 2 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 40 },
-     { step: 3, name: 'QC Submitted', status: stepInfo.step >= 3 ? (stepInfo.step > 3 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 60 },
-     { step: 4, name: 'QC Verified', status: stepInfo.step >= 4 ? (stepInfo.step > 4 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 80 },
-     { step: 5, name: 'Completed', status: stepInfo.step === 5 ? 'COMPLETED' : 'PENDING', progress_pct: 100 }
+    const sixSteps = [
+     { step: 1, name: 'Assigned', status: stepInfo.step >= 1 ? (stepInfo.step > 1 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 15 },
+     { step: 2, name: 'Accepted & Processing', status: stepInfo.step >= 2 ? (stepInfo.step > 2 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 30 },
+     { step: 3, name: 'QC Submitted', status: stepInfo.step >= 3 ? (stepInfo.step > 3 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 50 },
+     { step: 4, name: 'QC Verified', status: stepInfo.step >= 4 ? (stepInfo.step > 4 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 70 },
+     { step: 5, name: 'Pickup Arranged', status: stepInfo.step >= 5 ? (stepInfo.step > 5 ? 'COMPLETED' : 'CURRENT') : 'PENDING', progress_pct: 90 },
+     { step: 6, name: 'Picked Up (Final)', status: stepInfo.step === 6 ? 'COMPLETED' : 'PENDING', progress_pct: 100 }
     ];
 
     return {
@@ -712,7 +716,7 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
      status_label: stepInfo.label,
      current_step: stepInfo.step,
      progress_pct: stepInfo.pct,
-     lifecycle: fiveSteps,
+     lifecycle: sixSteps,
      partner: {
       id: so.partnerId || pInfo.id || '',
       name: so.partnerName || pInfo.companyName || pInfo.contactPerson || pInfo.name || 'Partner',
@@ -734,10 +738,14 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
 
    // Calculate overall order status based on partner sub-orders
    let overallStatus = curStatus;
-   if (curStatus === 'PICKUP_ARRANGED' || (orderData as any).pickupStatus === 'PICKUP_ARRANGED' || (orderData as any).pickupArranged) {
+   if (curStatus === 'PICKED_UP' || (orderData as any).pickupStatus === 'PICKED_UP' || (orderData as any).pickedUp) {
+    overallStatus = 'PICKED_UP';
+   } else if (curStatus === 'PICKUP_ARRANGED' || (orderData as any).pickupStatus === 'PICKUP_ARRANGED' || (orderData as any).pickupArranged) {
     overallStatus = 'PICKUP_ARRANGED';
    } else if (partnerStatuses.length > 0) {
-    if (partnerStatuses.some((p: any) => p.status === 'PICKUP_ARRANGED')) {
+    if (partnerStatuses.every((p: any) => p.status === 'PICKED_UP')) {
+     overallStatus = 'PICKED_UP';
+    } else if (partnerStatuses.some((p: any) => p.status === 'PICKUP_ARRANGED' || p.status === 'PICKED_UP')) {
      overallStatus = 'PICKUP_ARRANGED';
     } else if (partnerStatuses.every((p: any) => p.status === 'COMPLETED')) {
      overallStatus = 'COMPLETED';
@@ -755,12 +763,13 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
    }
 
    const stages = [
-    { key: 'ASSIGNED', name: 'Assigned', step: 1, pct: 20 },
-    { key: 'IN_PROCESS', name: 'Accepted & Processing', step: 2, pct: 40 },
-    { key: 'QC_PENDING', name: 'QC Submitted', step: 3, pct: 60 },
-    { key: 'QC_APPROVED', name: 'QC Verified', step: 4, pct: 80 },
-    { key: 'COMPLETED', name: 'Completed', step: 5, pct: 100 },
-    { key: 'PICKUP_ARRANGED', name: 'Pickup Arranged', step: 5, pct: 100 }
+    { key: 'ASSIGNED', name: 'Assigned', step: 1, pct: 15 },
+    { key: 'IN_PROCESS', name: 'Accepted & Processing', step: 2, pct: 30 },
+    { key: 'QC_PENDING', name: 'QC Submitted', step: 3, pct: 50 },
+    { key: 'QC_APPROVED', name: 'QC Verified', step: 4, pct: 70 },
+    { key: 'COMPLETED', name: 'Completed', step: 5, pct: 85 },
+    { key: 'PICKUP_ARRANGED', name: 'Pickup Arranged', step: 5, pct: 90 },
+    { key: 'PICKED_UP', name: 'Picked Up', step: 6, pct: 100 }
    ];
    const stageKeys = stages.map(s => s.key);
    const curIdx = stageKeys.indexOf(overallStatus) !== -1 ? stageKeys.indexOf(overallStatus) : 0;
@@ -1088,6 +1097,116 @@ export const api = onRequest({ cors: true, region: 'us-central1' }, async (req, 
    return;
   } catch (err: any) {
    res.status(500).json({ error: 'Failed to arrange pickup', details: err.message });
+   return;
+  }
+ }
+
+ // POST /orders/:id/picked-up (Partner or Admin marks that rider has collected the garments)
+ const pickedUpMatch = cleanPath.match(/^\/(?:orders|sub-orders)\/([^/]+)\/(?:picked-up|pickup-completed)$/);
+ if (req.method === 'POST' && pickedUpMatch) {
+  try {
+   const targetId = pickedUpMatch[1];
+   const now = new Date().toISOString();
+   const { picked_up_by, notes } = req.body || {};
+   const pickedUpDetails: any = {
+    status: 'PICKED_UP',
+    deliveryStatus: 'PICKED_UP',
+    pickupStatus: 'PICKED_UP',
+    pickedUp: true,
+    pickedUpAt: now,
+    pickedUpBy: picked_up_by || 'Partner',
+    pickupNotes: notes || null,
+    updatedAt: now,
+   };
+
+   // 1. Check if targetId is an order in orders collection
+   let orderDoc = await db.collection('orders').doc(targetId).get();
+   if (!orderDoc.exists) {
+    let qSnap = await db.collection('orders').where('orderNumber', '==', targetId).limit(1).get();
+    if (qSnap.empty) {
+     qSnap = await db.collection('orders').where('order_no', '==', targetId).limit(1).get();
+    }
+    if (qSnap.empty) {
+     qSnap = await db.collection('orders').where('orderId', '==', targetId).limit(1).get();
+    }
+    if (!qSnap.empty) {
+     orderDoc = qSnap.docs[0];
+    }
+   }
+
+   if (orderDoc.exists) {
+    const orderId = orderDoc.id;
+    await db.collection('orders').doc(orderId).set(pickedUpDetails, { merge: true });
+
+    // Also update all sub-orders under this order
+    let subsSnap = await db.collection('subOrders').where('orderId', '==', orderId).get();
+    if (subsSnap.empty) {
+     const ordNum = orderDoc.data()?.orderNumber || orderDoc.data()?.order_no;
+     if (ordNum) {
+      subsSnap = await db.collection('subOrders').where('mainOrderNumber', '==', ordNum).get();
+     }
+    }
+
+    if (!subsSnap.empty) {
+     const batch = db.batch();
+     subsSnap.docs.forEach(docSnap => {
+      batch.set(docSnap.ref, pickedUpDetails, { merge: true });
+     });
+     await batch.commit();
+    }
+
+    res.status(200).json({
+     success: true,
+     order_no: orderDoc.data()?.order_no || orderDoc.data()?.orderNumber || orderId,
+     status: 'PICKED_UP',
+     badge: 'PICKED UP',
+     picked_up_at: now,
+     picked_up_by: pickedUpDetails.pickedUpBy,
+     sub_orders_updated: subsSnap.size,
+     message: 'Order successfully marked as Picked Up. Final fulfillment stage completed.'
+    });
+    return;
+   }
+
+   // 2. Otherwise check if targetId is a sub-order
+   let subDoc = await db.collection('subOrders').doc(targetId).get();
+   if (!subDoc.exists) {
+    let qSub = await db.collection('subOrders').where('subOrderCode', '==', targetId).limit(1).get();
+    if (qSub.empty) {
+     qSub = await db.collection('subOrders').where('subOrderNumber', '==', targetId).limit(1).get();
+    }
+    if (!qSub.empty) {
+     subDoc = qSub.docs[0];
+    }
+   }
+
+   if (subDoc.exists) {
+    await subDoc.ref.set(pickedUpDetails, { merge: true });
+    const sData = subDoc.data() || {};
+    const parentId = sData.orderId || sData.mainOrderNumber;
+    if (parentId) {
+     const allSubsSnap = await db.collection('subOrders').where('orderId', '==', parentId).get();
+     const allPickedUp = allSubsSnap.docs.every(d => d.id === subDoc.id || d.data()?.status === 'PICKED_UP');
+     if (allPickedUp) {
+      await db.collection('orders').doc(parentId).set(pickedUpDetails, { merge: true });
+     }
+    }
+    res.status(200).json({
+     success: true,
+     sub_order_no: sData.subOrderCode || sData.subOrderNumber || subDoc.id,
+     status: 'PICKED_UP',
+     badge: 'PICKED UP',
+     picked_up_at: now,
+     picked_up_by: pickedUpDetails.pickedUpBy,
+     message: 'Sub-order marked as Picked Up successfully.'
+    });
+    return;
+   }
+
+   res.status(404).json({ error: 'Order or Sub-order not found', targetId });
+   return;
+  } catch (err: any) {
+   res.status(500).json({ error: 'Failed to mark as picked up', details: err.message });
    return;
   }
  }

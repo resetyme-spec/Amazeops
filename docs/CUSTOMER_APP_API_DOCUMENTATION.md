@@ -481,7 +481,41 @@ Each assigned partner progresses independently through these 5 lifecycle milesto
 
 ---
 
-### 3.6 Customer Order History List (`GET /api/orders`)
+### 3.6 Mark Order Picked Up (`POST /api/orders/:order_no/picked-up`)
+> **Use Case:** Once the logistics pickup person arrives at the laundry partner's location and collects the garments, this API is called (by the Partner App, Admin App, or Logistics system) to complete the final operational stage. Updates the order and all partner sub-orders with the **"PICKED UP"** badge across the Admin Portal and Partner App.
+
+* **Method:** `POST`
+* **Path:** `/api/orders/:order_no/picked-up` (or `/api/orders/:order_no/pickup-completed`)
+* **Example:** `POST https://amaze-ops.web.app/api/orders/AF-50201/picked-up`
+* **Headers:**
+  * `Content-Type: application/json`
+  * `x-api-key: amaze-fab-super-admin-key-2026`
+
+#### Request Body (Optional details)
+```json
+{
+  "picked_up_by": "Ruby (BP01)",
+  "notes": "All 5 garments handed over to rider Suresh"
+}
+```
+
+#### Response (`200 OK`)
+```json
+{
+  "success": true,
+  "order_no": "AF-50201",
+  "status": "PICKED_UP",
+  "badge": "PICKED UP",
+  "picked_up_at": "2026-11-07T05:30:00.000Z",
+  "picked_up_by": "Ruby (BP01)",
+  "sub_orders_updated": 2,
+  "message": "Order successfully marked as Picked Up. Final fulfillment stage completed."
+}
+```
+
+---
+
+### 3.7 Customer Order History List (`GET /api/orders`)
 > **Use Case:** Fetch all past and active orders for a customer account.
 
 * **Method:** `GET`

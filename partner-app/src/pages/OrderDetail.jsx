@@ -8,7 +8,7 @@ import {
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery, staffApproveQC, staffRejectQC } from '../lib/api';
+import { fetchOrderById, acceptOrder, rejectOrder, markGarmentCritical, submitQC, submitGarmentReQC, initiateDelivery, staffApproveQC, staffRejectQC, markOrderPickedUp } from '../lib/api';
 import { uploadToS3, uploadGarmentQcPhoto, S3_FOLDERS } from '../lib/s3';
 
 // Care Categories: Signature (Gold), Pristine (Orange), Premium (Blue)
@@ -92,6 +92,24 @@ export default function OrderDetail() {
   const [criticalModal, setCriticalModal] = useState({ open: false, garment: null });
   const [criticalComments, setCriticalComments] = useState('');
   const [criticalPhotos, setCriticalPhotos] = useState(['', '', '']);
+
+  // Picked up modal state
+  const [showPickedUpModal, setShowPickedUpModal] = useState(false);
+
+  const handleConfirmPickedUp = async () => {
+    if (!id || !user) return;
+    setActionLoading(true);
+    setError('');
+    try {
+      await markOrderPickedUp(id, user, 'Handed over to rider at partner location');
+      setShowPickedUpModal(false);
+      setSuccessBanner('Order successfully marked as Picked Up! Fulfilment complete.');
+      await load();
+    } catch (err) {
+      setError(err.message || 'Failed to mark as picked up');
+    }
+    setActionLoading(false);
+  };
 
   // Reject modal state
   const [rejectModal, setRejectModal] = useState(false);
@@ -675,8 +693,9 @@ export default function OrderDetail() {
     return g.qcStatus === 'QC_REJECTED' || !!rej || isMentioned;
   }).length;
 
-  const isPickupArranged = order.status === 'PICKUP_ARRANGED' || order.pickupStatus === 'PICKUP_ARRANGED' || order.pickupArranged;
-  const isCompleted = !isPickupArranged && (order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.status === 'QC_APPROVED' || order.qcStatus === 'QC_APPROVED');
+  const isPickedUp = order.status === 'PICKED_UP' || order.pickupStatus === 'PICKED_UP' || order.pickedUp;
+  const isPickupArranged = !isPickedUp && (order.status === 'PICKUP_ARRANGED' || order.pickupStatus === 'PICKUP_ARRANGED' || order.pickupArranged);
+  const isCompleted = !isPickedUp && !isPickupArranged && (order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.status === 'QC_APPROVED' || order.qcStatus === 'QC_APPROVED');
   const isReadyForDelivery = false;
   const isQcRejected = !isCompleted && (
     order.status === 'QC_REJECTED' ||
@@ -723,11 +742,40 @@ export default function OrderDetail() {
       <div className="detail-section">
         <div className="status-row">
           <span className="status-label">Status:</span>
-          <span className={`status-badge-lg ${isReadyForDelivery ? 'status-approved' : isQcRejected ? 'status-rejected' : isQcApproved ? 'status-approved' : isQcPending ? 'status-pending' : isNormalRejected ? 'status-rejected' : 'status-active'}`}>
-            {isPickupArranged ? 'PICKUP ARRANGED' : isCompleted ? 'COMPLETED' : isQcRejected ? 'QC REJECTED' : isQcPending ? 'QC SENT' : order.status}
+          <span className={`status-badge-lg ${isPickedUp ? 'status-approved' : isReadyForDelivery ? 'status-approved' : isQcRejected ? 'status-rejected' : isQcApproved ? 'status-approved' : isQcPending ? 'status-pending' : isNormalRejected ? 'status-rejected' : 'status-active'}`} style={isPickedUp ? { background: '#ecfdf5', color: '#047857', border: '1.5px solid #a7f3d0' } : isPickupArranged ? { background: '#eef2ff', color: '#4338ca', border: '1.5px solid #a5b4fc' } : {}}>
+            {isPickedUp ? 'PICKED UP' : isPickupArranged ? 'PICKUP ARRANGED' : isCompleted ? 'COMPLETED' : isQcRejected ? 'QC REJECTED' : isQcPending ? 'QC SENT' : order.status}
           </span>
         </div>
       </div>
+
+      {/* Picked Up Final Banner */}
+      {isPickedUp && (
+        <div style={{
+          background: '#ecfdf5',
+          border: '1.5px solid #a7f3d0',
+          borderRadius: 12,
+          padding: 16,
+          margin: '0 0 16px',
+          boxShadow: '0 2px 8px rgba(5, 150, 105, 0.08)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <CheckCircle2 size={24} color="#059669" />
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: '#065f46', display: 'flex', alignItems: 'center', gap: 6 }}>
+              🎉 Picked Up — Order Fulfilled
+            </div>
+            <div style={{ fontSize: 13, color: '#047857', marginTop: 2 }}>
+              Garments have been handed over to the logistics rider. Partner fulfillment is complete!
+              {order.pickedUpAt && <span style={{ marginLeft: 8, fontSize: 12 }}>· {new Date(order.pickedUpAt).toLocaleString('en-IN')}</span>}
+              {order.pickedUpBy && <span style={{ marginLeft: 8, fontSize: 12 }}>· Handed over by: {order.pickedUpBy}</span>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pickup Arranged Banner */}
       {isPickupArranged && (
@@ -1045,6 +1093,17 @@ export default function OrderDetail() {
         {canSubmitQC && (
           <button className="btn btn-primary btn-full" onClick={handleSubmitQC} disabled={actionLoading}>
             <CheckCircle2 size={18} /> Submit for QC
+          </button>
+        )}
+
+        {isPickupArranged && !isPickedUp && (
+          <button
+            className="btn btn-primary btn-full"
+            style={{ background: '#059669', borderColor: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontWeight: 700, fontSize: 15 }}
+            onClick={() => setShowPickedUpModal(true)}
+            disabled={actionLoading}
+          >
+            <Truck size={18} /> Mark as Picked Up / Hand Over
           </button>
         )}
       </div>
@@ -2071,6 +2130,56 @@ export default function OrderDetail() {
                 style={{ minWidth: 100 }}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Handover Confirmation Modal */}
+      {showPickedUpModal && (
+        <div className="modal-overlay" onClick={() => setShowPickedUpModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="modal-header">
+              <h3><Truck size={20} color="#059669" /> Confirm Handover to Rider</h3>
+              <button className="modal-close" onClick={() => setShowPickedUpModal(false)}><XIcon size={20} /></button>
+            </div>
+            <div className="modal-body" style={{ padding: '16px 20px' }}>
+              <p style={{ fontSize: 14, color: '#334155', lineHeight: 1.5, margin: '0 0 16px' }}>
+                Are you sure you want to mark this order as <b>Picked Up</b>?
+              </p>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: '#475569', marginBottom: 4 }}>
+                  <strong>Rider:</strong> {order.rider_name || 'Assigned Logistics Rider'}
+                  {order.rider_phone && ` (${order.rider_phone})`}
+                </div>
+                <div style={{ fontSize: 13, color: '#475569' }}>
+                  <strong>Garments:</strong> {garments.length} items to be collected
+                </div>
+              </div>
+
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                This confirms that the logistics rider has arrived at your location and successfully collected all garments. This is the final fulfillment stage.
+              </p>
+            </div>
+            <div className="modal-actions" style={{ padding: '12px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setShowPickedUpModal(false)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ background: '#059669', borderColor: '#059669' }}
+                onClick={handleConfirmPickedUp}
+                disabled={actionLoading}
+              >
+                {actionLoading ? 'Updating...' : 'Confirm Handover'}
               </button>
             </div>
           </div>

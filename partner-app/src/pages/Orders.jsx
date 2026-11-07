@@ -42,6 +42,7 @@ const STATUS_FILTERS = [
  { label: 'QC Rejected', value: 'QC_REJECTED' },
  { label: 'Completed', value: 'COMPLETED' },
  { label: 'Pickup Arranged', value: 'PICKUP_ARRANGED' },
+ { label: 'Picked Up', value: 'PICKED_UP' },
 ];
 
 function careBadge(cat) {
@@ -168,7 +169,9 @@ export default function Orders() {
 
  const filtered = orders.filter(o => {
   if (statusFilter) {
-   if (statusFilter === 'PICKUP_ARRANGED') {
+   if (statusFilter === 'PICKED_UP') {
+    if (o.status !== 'PICKED_UP' && o.pickupStatus !== 'PICKED_UP' && !o.pickedUp) return false;
+   } else if (statusFilter === 'PICKUP_ARRANGED') {
     if (o.status !== 'PICKUP_ARRANGED' && o.pickupStatus !== 'PICKUP_ARRANGED' && !o.pickupArranged) return false;
    } else if (statusFilter === 'COMPLETED') {
     if (o.status !== 'COMPLETED' && o.status !== 'DELIVERED' && o.status !== 'READY_FOR_DELIVERY' && o.qcStatus !== 'QC_APPROVED') return false;
@@ -195,7 +198,8 @@ export default function Orders() {
   IN_PROCESS: orders.filter(o => o.status === 'IN_PROCESS').length,
   QC_SENT: orders.filter(o => o.status === 'QC_SENT' || o.qcStatus === 'QC_PENDING').length,
   COMPLETED: orders.filter(o => o.status === 'COMPLETED' || o.status === 'DELIVERED' || o.status === 'READY_FOR_DELIVERY' || o.qcStatus === 'QC_APPROVED').length,
- PICKUP_ARRANGED: orders.filter(o => o.status === 'PICKUP_ARRANGED' || o.pickupStatus === 'PICKUP_ARRANGED' || o.pickupArranged).length,
+ PICKUP_ARRANGED: orders.filter(o => (o.status === 'PICKUP_ARRANGED' || o.pickupStatus === 'PICKUP_ARRANGED' || o.pickupArranged) && o.status !== 'PICKED_UP' && !o.pickedUp).length,
+  PICKED_UP: orders.filter(o => o.status === 'PICKED_UP' || o.pickupStatus === 'PICKED_UP' || o.pickedUp).length,
  };
 
  const handleQuickAccept = async (orderId) => {
@@ -223,8 +227,31 @@ export default function Orders() {
  };
 
  const getOrderTheme = (order) => {
-  const isPickupArranged = order.status === 'PICKUP_ARRANGED' || order.pickupStatus === 'PICKUP_ARRANGED' || order.pickupArranged;
-  const isCompleted = !isPickupArranged && (order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.qcStatus === 'QC_APPROVED' || order.status === 'QC_APPROVED');
+  const isPickedUp = order.status === 'PICKED_UP' || order.pickupStatus === 'PICKED_UP' || order.pickedUp;
+  const isPickupArranged = !isPickedUp && (order.status === 'PICKUP_ARRANGED' || order.pickupStatus === 'PICKUP_ARRANGED' || order.pickupArranged);
+  const isCompleted = !isPickedUp && !isPickupArranged && (order.status === 'COMPLETED' || order.status === 'DELIVERED' || order.status === 'READY_FOR_DELIVERY' || order.qcStatus === 'QC_APPROVED' || order.status === 'QC_APPROVED');
+
+  if (isPickedUp) {
+   return {
+    key: 'PICKED_UP',
+    label: 'PICKED UP',
+    badgeClass: 'status-approved',
+    headerBg: '#059669',
+    bodyBg: '#ecfdf5',
+    borderColor: '#a7f3d0',
+    customerColor: '#065f46',
+    accentColor: '#059669',
+    badgeBg: 'rgba(255, 255, 255, 0.25)',
+    badgeColor: '#ffffff',
+    badgeBorder: 'rgba(255, 255, 255, 0.5)',
+    partnerBadgeBg: '#d1fae5',
+    partnerBadgeColor: '#047857',
+    Icon: CheckCircle2,
+    showAccept: false,
+    showQc: false,
+    showDelivery: false,
+   };
+  }
   const isQcRej = !isCompleted && (order.qcStatus === 'QC_REJECTED' || order.status === 'QC_REJECTED');
   const isQcSent = !isCompleted && !isQcRej && (order.status === 'QC_SENT' || order.qcStatus === 'QC_PENDING');
   const isInProc = !isCompleted && !isQcRej && !isQcSent && order.status === 'IN_PROCESS';
@@ -515,6 +542,15 @@ export default function Orders() {
    border="#a5b4fc"
    active={statusFilter === 'PICKUP_ARRANGED'}
    onClick={() => setSearchParams(statusFilter === 'PICKUP_ARRANGED' ? '' : '?status=PICKUP_ARRANGED')}
+  />
+  <StatCard
+   label="Picked Up"
+   value={stats.PICKED_UP}
+   color="#059669"
+   bg="#ecfdf5"
+   border="#a7f3d0"
+   active={statusFilter === 'PICKED_UP'}
+   onClick={() => setSearchParams(statusFilter === 'PICKED_UP' ? '' : '?status=PICKED_UP')}
   />
   <StatCard
    label="Completed"

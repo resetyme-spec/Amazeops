@@ -17,16 +17,18 @@ const STATUS_OPTIONS: { label: string; value: string }[] = [
  { label: 'QC Rejected', value: 'QC_REJECTED' },
  { label: 'Completed', value: 'COMPLETED' },
  { label: 'Pickup Arranged', value: 'PICKUP_ARRANGED' },
+ { label: 'Picked Up', value: 'PICKED_UP' },
 ];
 const STATUS_COLORS: Record<string, string> = {
  RECEIVED: 'badge-received', ASSIGNED: 'badge-assigned', IN_PROCESS: 'badge-in_process',
- COMPLETED: 'badge-completed', DELIVERED: 'badge-completed', PICKUP_ARRANGED: 'badge-pickup_arranged',
+ COMPLETED: 'badge-completed', DELIVERED: 'badge-completed', PICKUP_ARRANGED: 'badge-pickup_arranged', PICKED_UP: 'badge-completed',
  QC_PENDING: 'badge-qc_pending', QC_APPROVED: 'badge-completed', READY_FOR_DELIVERY: 'badge-completed',
  QC_REJECTED: 'badge-rejected', CANCELLED: 'badge-cancelled', REJECTED: 'badge-rejected',
 };
 
 function getBadgeInfo(status: string) {
  const s = (status || '').toUpperCase();
+ if (s === 'PICKED_UP') return { label: 'PICKED UP', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' };
  if (s === 'PICKUP_ARRANGED') return { label: 'PICKUP ARRANGED', bg: '#e0e7ff', color: '#4338ca', border: '#a5b4fc' };
  if (s === 'COMPLETED' || s === 'DELIVERED' || s === 'READY_FOR_DELIVERY') return { label: 'COMPLETED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
  if (s === 'QC_APPROVED') return { label: 'QC APPROVED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
@@ -283,6 +285,9 @@ function buildPartnerTimeline(so: SubOrder, order: Order, qcRecord?: any): Timel
 
 function deriveStatus(order: Order, subs: SubOrder[]): string {
  const oStatus = (order.status || '').toUpperCase();
+
+ // If picked up (final stage)
+ if (oStatus === 'PICKED_UP' || (order as any).pickupStatus === 'PICKED_UP' || (order as any).pickedUp || (subs.length > 0 && subs.every(s => (s.status || '').toUpperCase() === 'PICKED_UP' || (s as any).pickedUp))) return 'PICKED_UP';
 
  // If pickup arranged
  if (oStatus === 'PICKUP_ARRANGED' || (order as any).pickupStatus === 'PICKUP_ARRANGED' || (order as any).pickupArranged || (subs.length > 0 && subs.some(s => (s.status || '').toUpperCase() === 'PICKUP_ARRANGED' || (s as any).pickupArranged))) return 'PICKUP_ARRANGED';
@@ -919,6 +924,7 @@ export default function OrdersPage() {
      { label: 'QC Rejected', value: 'QC_REJECTED' },
      { label: 'Completed', value: 'COMPLETED' },
      { label: 'Pickup Arranged', value: 'PICKUP_ARRANGED' },
+     { label: 'Picked Up', value: 'PICKED_UP' },
     ].map(chip => {
      const count = statusCounts[chip.value] ?? (chip.value === '' ? orders.length : 0);
      const isActive = statusFilter === chip.value;

@@ -117,6 +117,26 @@
           }
         },
         {
+          "name": "Mark Order Picked Up (Final Stage)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-api-key", "value": "{{apiKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"picked_up_by\": \"Ruby (BP01)\",\n  \"notes\": \"All garments collected by logistics rider\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/ORD-2026-9812/picked-up",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "ORD-2026-9812", "picked-up"]
+            },
+            "description": "Partner or Admin confirms that the logistics rider has picked up the garments. Final stage for Amaze Ops."
+          }
+        },
+        {
           "name": "Customer Orders List by Phone",
           "request": {
             "method": "GET",

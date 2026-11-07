@@ -75,6 +75,7 @@ function customerLabel(name: string, category: string): React.ReactNode {
 
 function getBadgeInfo(status: string) {
   const s = (status || '').toUpperCase();
+  if (s === 'PICKED_UP') return { label: 'PICKED UP', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' };
   if (s === 'PICKUP_ARRANGED') return { label: 'PICKUP ARRANGED', bg: '#e0e7ff', color: '#4338ca', border: '#a5b4fc' };
   if (s === 'COMPLETED' || s === 'DELIVERED' || s === 'READY_FOR_DELIVERY') return { label: 'COMPLETED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
   if (s === 'QC_APPROVED') return { label: 'QC APPROVED', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
@@ -964,6 +965,78 @@ export default function OrderDetail() {
     }
   }
 
+  const [pickedUpLoading, setPickedUpLoading] = useState(false);
+
+  const handleAdminMarkOrderPickedUp = async () => {
+    if (!order) return;
+    if (!window.confirm('Mark this order as Picked Up? This confirms that the rider has collected all garments from the laundry partner(s). This is the final stage.')) {
+      return;
+    }
+    setPickedUpLoading(true);
+    try {
+      const now = new Date().toISOString();
+      const updateData = {
+        status: 'PICKED_UP',
+        deliveryStatus: 'PICKED_UP',
+        pickupStatus: 'PICKED_UP',
+        pickedUp: true,
+        pickedUpAt: now,
+        pickedUpBy: 'Admin',
+        pickupNotes: 'Confirmed collected by logistics rider',
+        updatedAt: now,
+      };
+
+      await updateDoc(doc(db, 'orders', order.id), updateData);
+
+      for (const so of subOrders) {
+        await updateDoc(doc(db, 'subOrders', so.id), updateData);
+      }
+
+      setOrder(prev => prev ? { ...prev, ...updateData } : null);
+      setSubOrders(prev => prev.map(s => ({ ...s, ...updateData })));
+      alert('Order marked as Picked Up successfully! Final fulfillment stage complete.');
+    } catch (err: any) {
+      alert('Failed to mark order as picked up: ' + err.message);
+    } finally {
+      setPickedUpLoading(false);
+    }
+  };
+
+  const handleAdminMarkSubOrderPickedUp = async (so: SubOrder) => {
+    if (!window.confirm(`Mark sub-order ${so.subOrderCode || so.id} as Picked Up?`)) {
+      return;
+    }
+    setPickedUpLoading(true);
+    try {
+      const now = new Date().toISOString();
+      const updateData = {
+        status: 'PICKED_UP',
+        deliveryStatus: 'PICKED_UP',
+        pickupStatus: 'PICKED_UP',
+        pickedUp: true,
+        pickedUpAt: now,
+        pickedUpBy: 'Admin',
+        updatedAt: now,
+      };
+
+      await updateDoc(doc(db, 'subOrders', so.id), updateData);
+
+      const updatedSubs = subOrders.map(s => s.id === so.id ? { ...s, ...updateData } : s);
+      setSubOrders(updatedSubs);
+
+      const allPickedUp = updatedSubs.every(s => s.status === 'PICKED_UP');
+      if (allPickedUp && order) {
+        await updateDoc(doc(db, 'orders', order.id), updateData);
+        setOrder(prev => prev ? { ...prev, ...updateData } : null);
+      }
+      alert('Sub-order marked as Picked Up successfully.');
+    } catch (err: any) {
+      alert('Failed to update sub-order: ' + err.message);
+    } finally {
+      setPickedUpLoading(false);
+    }
+  };
+
   // Quick Pass QC handler for individual garment
   async function handlePassGarmentQC(g: Garment) {
     if (!order) return;
@@ -1168,9 +1241,12 @@ export default function OrderDetail() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {(() => {
-              const currentStatus = (order as any).pickupStatus === 'PICKUP_ARRANGED' || (order as any).pickupArranged || order.status === 'PICKUP_ARRANGED' || subOrders.some(s => s.status === 'PICKUP_ARRANGED')
-                ? 'PICKUP_ARRANGED'
-                : (order.status || (subOrders.some(s => s.status === 'READY_FOR_DELIVERY') ? 'READY_FOR_DELIVERY' : 'RECEIVED'));
+              const isOrderPickedUp = (order as any).pickupStatus === 'PICKED_UP' || (order as any).pickedUp || order.status === 'PICKED_UP' || (subOrders.length > 0 && subOrders.every(s => s.status === 'PICKED_UP'));
+              const currentStatus = isOrderPickedUp
+                ? 'PICKED_UP'
+                : ((order as any).pickupStatus === 'PICKUP_ARRANGED' || (order as any).pickupArranged || order.status === 'PICKUP_ARRANGED' || subOrders.some(s => s.status === 'PICKUP_ARRANGED')
+                  ? 'PICKUP_ARRANGED'
+                  : (order.status || (subOrders.some(s => s.status === 'READY_FOR_DELIVERY') ? 'READY_FOR_DELIVERY' : 'RECEIVED')));
               const b = getBadgeInfo(currentStatus);
               return (
                 <span style={{
@@ -1219,8 +1295,41 @@ export default function OrderDetail() {
         </div>
       </div>
 
+      {/* Picked Up Final Banner */}
+      {((order as any).pickupStatus === 'PICKED_UP' || (order as any).pickedUp || order.status === 'PICKED_UP' || (subOrders.length > 0 && subOrders.every(s => s.status === 'PICKED_UP'))) && (
+        <div style={{
+          background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+          border: '1.5px solid #6ee7b7',
+          borderRadius: 12,
+          padding: '16px 20px',
+          marginBottom: 24,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 2px 8px rgba(5,150,105,0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 10, background: '#a7f3d0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <CheckCircle2 size={24} color="#047857" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: '#065f46', display: 'flex', alignItems: 'center', gap: 8 }}>
+                🎉 Final Stage — Garments Picked Up
+                <span style={{ fontSize: 11, background: '#059669', color: '#fff', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>FULFILLED</span>
+              </div>
+              <div style={{ fontSize: 13, color: '#047857', marginTop: 3 }}>
+                Garments have been collected from the laundry partner by the logistics rider. Partner operations are fully complete.
+                {(order as any).pickedUpAt && <span style={{ marginLeft: 8, fontWeight: 600 }}>· Picked up at: {new Date((order as any).pickedUpAt).toLocaleString('en-IN')}</span>}
+                {(order as any).pickedUpBy && <span style={{ marginLeft: 8 }}>· By: {(order as any).pickedUpBy}</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Pickup Arranged Banner */}
-      {((order as any).pickupStatus === 'PICKUP_ARRANGED' || (order as any).pickupArranged || order.status === 'PICKUP_ARRANGED' || subOrders.some(s => s.status === 'PICKUP_ARRANGED')) && (
+      {!((order as any).pickupStatus === 'PICKED_UP' || (order as any).pickedUp || order.status === 'PICKED_UP' || (subOrders.length > 0 && subOrders.every(s => s.status === 'PICKED_UP'))) &&
+       ((order as any).pickupStatus === 'PICKUP_ARRANGED' || (order as any).pickupArranged || order.status === 'PICKUP_ARRANGED' || subOrders.some(s => s.status === 'PICKUP_ARRANGED')) && (
         <div style={{
           background: '#eef2ff',
           border: '1.5px solid #a5b4fc',
@@ -1229,20 +1338,46 @@ export default function OrderDetail() {
           marginBottom: 24,
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
           gap: 12,
         }}>
-          <div style={{ width: 34, height: 34, borderRadius: 8, background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Truck size={18} color="#4f46e5" />
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14, color: '#4338ca' }}>Pickup Arranged by Customer App</div>
-            <div style={{ fontSize: 12, color: '#3730a3', marginTop: 2 }}>
-              Logistics pickup has been scheduled for this completed order.
-              {(order as any).rider_name && <span style={{ marginLeft: 8, fontWeight: 600 }}>· Rider: {(order as any).rider_name} ({(order as any).rider_phone || 'No phone'})</span>}
-              {(order as any).pickup_time && <span style={{ marginLeft: 8 }}>· Scheduled: {new Date((order as any).pickup_time).toLocaleString('en-IN')}</span>}
-              {(order as any).pickupArrangedAt && <span style={{ marginLeft: 8, color: '#6366f1' }}>· Arranged at {new Date((order as any).pickupArrangedAt).toLocaleString('en-IN')}</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Truck size={18} color="#4f46e5" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#4338ca' }}>Pickup Arranged by Customer App</div>
+              <div style={{ fontSize: 12, color: '#3730a3', marginTop: 2 }}>
+                Logistics pickup has been scheduled for this completed order.
+                {(order as any).rider_name && <span style={{ marginLeft: 8, fontWeight: 600 }}>· Rider: {(order as any).rider_name} ({(order as any).rider_phone || 'No phone'})</span>}
+                {(order as any).pickup_time && <span style={{ marginLeft: 8 }}>· Scheduled: {new Date((order as any).pickup_time).toLocaleString('en-IN')}</span>}
+                {(order as any).pickupArrangedAt && <span style={{ marginLeft: 8, color: '#6366f1' }}>· Arranged at {new Date((order as any).pickupArrangedAt).toLocaleString('en-IN')}</span>}
+              </div>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={handleAdminMarkOrderPickedUp}
+            disabled={pickedUpLoading}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: 'none',
+              background: '#059669',
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: '0 2px 4px rgba(5,150,105,0.2)',
+              flexShrink: 0
+            }}
+          >
+            <Truck size={15} /> {pickedUpLoading ? 'Updating...' : 'Mark as Picked Up'}
+          </button>
         </div>
       )}
 
@@ -1529,6 +1664,30 @@ export default function OrderDetail() {
                           <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#16a34a' : color, borderRadius: 2, transition: 'width 0.3s' }} />
                         </div>
                       </div>
+
+                      {(so.status === 'PICKUP_ARRANGED' || (order as any).pickupStatus === 'PICKUP_ARRANGED' || (order as any).pickupArranged || order.status === 'PICKUP_ARRANGED') && so.status !== 'PICKED_UP' && (
+                        <button
+                          type="button"
+                          onClick={() => handleAdminMarkSubOrderPickedUp(so)}
+                          disabled={pickedUpLoading}
+                          style={{
+                            padding: '5px 12px',
+                            borderRadius: 6,
+                            border: '1px solid #6ee7b7',
+                            background: '#ecfdf5',
+                            fontSize: 12,
+                            color: '#047857',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            boxShadow: '0 1px 2px rgba(5,150,105,0.08)'
+                          }}
+                        >
+                          <Truck size={13} /> Mark Picked Up
+                        </button>
+                      )}
 
                       <button
                         type="button"

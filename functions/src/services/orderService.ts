@@ -222,9 +222,14 @@ export function calculateOverallOrderStatus(subOrders: any[]): string {
 
  const statuses = subOrders.map(s => String(s.status || '').toUpperCase());
 
- // If all or any are PICKUP_ARRANGED (and rest are completed)
- if (statuses.some(s => s === 'PICKUP_ARRANGED')) {
-  return 'PICKUP_ARRANGED';
+ // If all are PICKED_UP (final stage)
+ if (statuses.every(s => s === 'PICKED_UP')) {
+  return 'PICKED_UP';
+ }
+
+ // If all or any are PICKUP_ARRANGED or PICKED_UP (and rest are completed)
+ if (statuses.some(s => s === 'PICKUP_ARRANGED' || s === 'PICKED_UP')) {
+  return statuses.every(s => s === 'PICKED_UP') ? 'PICKED_UP' : 'PICKUP_ARRANGED';
  }
 
  // If all are COMPLETED (or legacy DELIVERED / READY_TO_DELIVER)
@@ -360,6 +365,13 @@ export async function syncSubOrderStatusAndNotify(
   if (newStatus === 'QC_PENDING' || extraData.qcSubmission) {
    parentUpdate.qcStatus = 'QC_PENDING';
    if (extraData.qcSubmission) parentUpdate.qcSubmission = extraData.qcSubmission;
+  } else if (newStatus === 'PICKED_UP' || extraData.pickedUp) {
+   parentUpdate.status = 'PICKED_UP';
+   parentUpdate.pickupStatus = 'PICKED_UP';
+   parentUpdate.pickedUp = true;
+   parentUpdate.pickedUpAt = now;
+   if (extraData.pickedUpBy) parentUpdate.pickedUpBy = extraData.pickedUpBy;
+   if (extraData.notes) parentUpdate.pickupNotes = extraData.notes;
   } else if (newStatus === 'PICKUP_ARRANGED' || extraData.pickupArranged) {
    parentUpdate.status = 'PICKUP_ARRANGED';
    parentUpdate.pickupStatus = 'PICKUP_ARRANGED';
