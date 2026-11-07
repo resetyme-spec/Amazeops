@@ -200,6 +200,7 @@ export default function Orders() {
   ASSIGNED: orders.filter(o => o.status === 'ASSIGNED' || o.status === 'RECEIVED').length,
   IN_PROCESS: orders.filter(o => o.status === 'IN_PROCESS').length,
   QC_SENT: orders.filter(o => o.status === 'QC_SENT' || o.qcStatus === 'QC_PENDING').length,
+  QC_REJECTED: orders.filter(o => o.status === 'QC_REJECTED' || o.qcStatus === 'QC_REJECTED').length,
   COMPLETED: orders.filter(o => {
    const isPickup = o.status === 'PICKUP_ARRANGED' || o.pickupStatus === 'PICKUP_ARRANGED' || o.pickupArranged;
    const isPickUp = o.status === 'PICKED_UP' || o.pickupStatus === 'PICKED_UP' || o.pickedUp;
@@ -516,15 +517,6 @@ export default function Orders() {
    onClick={() => setSearchParams(statusFilter === 'QC_SENT' ? '' : '?status=QC_SENT')}
   />
   <StatCard
-   label="QC Approved"
-   value={stats.QC_APPROVED}
-   color="#15803d"
-   bg="#f0fdf4"
-   border="#86efac"
-   active={statusFilter === 'QC_APPROVED'}
-   onClick={() => setSearchParams(statusFilter === 'QC_APPROVED' ? '' : '?status=QC_APPROVED')}
-  />
-  <StatCard
    label="QC Rejected"
    value={stats.QC_REJECTED}
    color="#b91c1c"
@@ -532,6 +524,15 @@ export default function Orders() {
    border="#fca5a5"
    active={statusFilter === 'QC_REJECTED'}
    onClick={() => setSearchParams(statusFilter === 'QC_REJECTED' ? '' : '?status=QC_REJECTED')}
+  />
+  <StatCard
+   label="Completed"
+   value={stats.COMPLETED}
+   color="#0f766e"
+   bg="#f0fdfa"
+   border="#5eead4"
+   active={statusFilter === 'COMPLETED'}
+   onClick={() => setSearchParams(statusFilter === 'COMPLETED' ? '' : '?status=COMPLETED')}
   />
   <StatCard
    label="Pickup Arranged"
@@ -550,15 +551,6 @@ export default function Orders() {
    border="#a7f3d0"
    active={statusFilter === 'PICKED_UP'}
    onClick={() => setSearchParams(statusFilter === 'PICKED_UP' ? '' : '?status=PICKED_UP')}
-  />
-  <StatCard
-   label="Completed"
-   value={stats.COMPLETED}
-   color="#0f766e"
-   bg="#f0fdfa"
-   border="#5eead4"
-   active={statusFilter === 'DELIVERED'}
-   onClick={() => setSearchParams(statusFilter === 'DELIVERED' ? '' : '?status=DELIVERED')}
   />
  </div>
 
