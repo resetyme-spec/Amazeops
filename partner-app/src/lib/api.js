@@ -163,12 +163,14 @@ export async function fetchOrdersByPartner(partnerId) {
    ));
    const allPassed = garments.length > 0 && garments.every(g => g.qcStatus === 'QC_PASSED') && !hasAnyRejection;
 
-   const isCompleted = sub.status === 'COMPLETED' || sub.status === 'DELIVERED' || sub.status === 'READY_FOR_DELIVERY' || parent.status === 'COMPLETED' || parent.status === 'DELIVERED';
-    const isQcRej = !isCompleted && (qcStatus === 'QC_REJECTED' || sub.status === 'QC_REJECTED' || parent.status === 'QC_REJECTED' || hasAnyRejection || !!sub.rejectionReason || !!qc?.rejectionReason);
-    const isQcApp = !isCompleted && !isQcRej && (qcStatus === 'QC_APPROVED' || sub.status === 'QC_APPROVED' || parent.status === 'QC_APPROVED' || parent.qcStatus === 'QC_APPROVED' || allPassed);
-    const isQcPen = !isCompleted && !isQcApp && !isQcRej && (qcStatus === 'QC_PENDING' || sub.status === 'QC_SENT');
-    const subStatus = (isCompleted || isQcApp) ? 'COMPLETED' : isQcRej ? 'QC_REJECTED' : isQcPen ? 'QC_SENT' : sub.status;
-    const finalQcStatus = (isCompleted || isQcApp) ? 'QC_APPROVED' : isQcRej ? 'QC_REJECTED' : qcStatus;
+   const isPickedUp = sub.status === 'PICKED_UP' || parent.status === 'PICKED_UP' || sub.pickupStatus === 'PICKED_UP' || parent.pickupStatus === 'PICKED_UP' || sub.pickedUp || parent.pickedUp;
+   const isPickupArranged = !isPickedUp && (sub.status === 'PICKUP_ARRANGED' || parent.status === 'PICKUP_ARRANGED' || sub.pickupStatus === 'PICKUP_ARRANGED' || parent.pickupStatus === 'PICKUP_ARRANGED' || sub.pickupArranged || parent.pickupArranged);
+   const isCompleted = !isPickedUp && !isPickupArranged && (sub.status === 'COMPLETED' || sub.status === 'DELIVERED' || sub.status === 'READY_FOR_DELIVERY' || parent.status === 'COMPLETED' || parent.status === 'DELIVERED');
+   const isQcRej = !isCompleted && !isPickupArranged && !isPickedUp && (qcStatus === 'QC_REJECTED' || sub.status === 'QC_REJECTED' || parent.status === 'QC_REJECTED' || hasAnyRejection || !!sub.rejectionReason || !!qc?.rejectionReason);
+   const isQcApp = !isCompleted && !isQcRej && !isPickupArranged && !isPickedUp && (qcStatus === 'QC_APPROVED' || sub.status === 'QC_APPROVED' || parent.status === 'QC_APPROVED' || parent.qcStatus === 'QC_APPROVED' || allPassed);
+   const isQcPen = !isCompleted && !isQcApp && !isQcRej && !isPickupArranged && !isPickedUp && (qcStatus === 'QC_PENDING' || sub.status === 'QC_SENT');
+   const subStatus = isPickedUp ? 'PICKED_UP' : isPickupArranged ? 'PICKUP_ARRANGED' : (isCompleted || isQcApp) ? 'COMPLETED' : isQcRej ? 'QC_REJECTED' : isQcPen ? 'QC_SENT' : sub.status;
+   const finalQcStatus = (isCompleted || isQcApp || isPickupArranged || isPickedUp) ? 'QC_APPROVED' : isQcRej ? 'QC_REJECTED' : qcStatus;
 
    const qcRejection = isQcApp ? null : ((qc?.rejectionReason ? {
     reason: qc.rejectionReason,
@@ -198,6 +200,15 @@ export async function fetchOrdersByPartner(partnerId) {
     services: parent.services || [],
     status: subStatus,
     qcStatus: finalQcStatus,
+    pickupStatus: sub.pickupStatus || parent.pickupStatus || (isPickupArranged ? 'PICKUP_ARRANGED' : isPickedUp ? 'PICKED_UP' : null),
+    pickupArranged: !!(sub.pickupArranged || parent.pickupArranged || isPickupArranged),
+    pickupArrangedAt: sub.pickupArrangedAt || parent.pickupArrangedAt || null,
+    pickedUp: !!(sub.pickedUp || parent.pickedUp || isPickedUp),
+    pickedUpAt: sub.pickedUpAt || parent.pickedUpAt || null,
+    pickedUpBy: sub.pickedUpBy || parent.pickedUpBy || null,
+    rider_name: sub.rider_name || parent.rider_name || null,
+    rider_phone: sub.rider_phone || parent.rider_phone || null,
+    pickup_time: sub.pickup_time || parent.pickup_time || null,
     qcRejection,
     rejectedGarments: isQcApp ? {} : (qc?.rejectedGarments || parent.rejectedGarments || {}),
     qcSubmittedAt: qc?.submittedAt || sub.qcSubmittedAt,
@@ -1088,17 +1099,28 @@ export async function fetchOrdersForStaff(actor, selectedPartnerId = '') {
       ));
       const allPassed = garments.length > 0 && garments.every(g => g.qcStatus === 'QC_PASSED') && !hasAnyRejection;
 
-      const isCompleted = sub.status === 'COMPLETED' || sub.status === 'DELIVERED' || sub.status === 'READY_FOR_DELIVERY' || parent.status === 'COMPLETED' || parent.status === 'DELIVERED';
-      const isQcRej = !isCompleted && (qcStatus === 'QC_REJECTED' || sub.status === 'QC_REJECTED' || parent.status === 'QC_REJECTED' || hasAnyRejection || !!sub.rejectionReason || !!qc?.rejectionReason);
-      const isQcApp = !isCompleted && !isQcRej && (qcStatus === 'QC_APPROVED' || sub.status === 'QC_APPROVED' || parent.status === 'QC_APPROVED' || parent.qcStatus === 'QC_APPROVED' || allPassed);
-      const isQcPen = !isCompleted && !isQcApp && !isQcRej && (qcStatus === 'QC_PENDING' || sub.status === 'QC_SENT');
-      const subStatus = (isCompleted || isQcApp) ? 'COMPLETED' : isQcRej ? 'QC_REJECTED' : isQcPen ? 'QC_SENT' : sub.status;
-      const finalQcStatus = (isCompleted || isQcApp) ? 'QC_APPROVED' : isQcRej ? 'QC_REJECTED' : qcStatus;
+      const isPickedUp = sub.status === 'PICKED_UP' || parent.status === 'PICKED_UP' || sub.pickupStatus === 'PICKED_UP' || parent.pickupStatus === 'PICKED_UP' || sub.pickedUp || parent.pickedUp;
+      const isPickupArranged = !isPickedUp && (sub.status === 'PICKUP_ARRANGED' || parent.status === 'PICKUP_ARRANGED' || sub.pickupStatus === 'PICKUP_ARRANGED' || parent.pickupStatus === 'PICKUP_ARRANGED' || sub.pickupArranged || parent.pickupArranged);
+      const isCompleted = !isPickedUp && !isPickupArranged && (sub.status === 'COMPLETED' || sub.status === 'DELIVERED' || sub.status === 'READY_FOR_DELIVERY' || parent.status === 'COMPLETED' || parent.status === 'DELIVERED');
+      const isQcRej = !isCompleted && !isPickupArranged && !isPickedUp && (qcStatus === 'QC_REJECTED' || sub.status === 'QC_REJECTED' || parent.status === 'QC_REJECTED' || hasAnyRejection || !!sub.rejectionReason || !!qc?.rejectionReason);
+      const isQcApp = !isCompleted && !isQcRej && !isPickupArranged && !isPickedUp && (qcStatus === 'QC_APPROVED' || sub.status === 'QC_APPROVED' || parent.status === 'QC_APPROVED' || parent.qcStatus === 'QC_APPROVED' || allPassed);
+      const isQcPen = !isCompleted && !isQcApp && !isQcRej && !isPickupArranged && !isPickedUp && (qcStatus === 'QC_PENDING' || sub.status === 'QC_SENT');
+      const subStatus = isPickedUp ? 'PICKED_UP' : isPickupArranged ? 'PICKUP_ARRANGED' : (isCompleted || isQcApp) ? 'COMPLETED' : isQcRej ? 'QC_REJECTED' : isQcPen ? 'QC_SENT' : sub.status;
+      const finalQcStatus = (isCompleted || isQcApp || isPickupArranged || isPickedUp) ? 'QC_APPROVED' : isQcRej ? 'QC_REJECTED' : qcStatus;
 
       return {
         ...sub,
         status: subStatus,
         qcStatus: finalQcStatus,
+        pickupStatus: sub.pickupStatus || parent.pickupStatus || (isPickupArranged ? 'PICKUP_ARRANGED' : isPickedUp ? 'PICKED_UP' : null),
+        pickupArranged: !!(sub.pickupArranged || parent.pickupArranged || isPickupArranged),
+        pickupArrangedAt: sub.pickupArrangedAt || parent.pickupArrangedAt || null,
+        pickedUp: !!(sub.pickedUp || parent.pickedUp || isPickedUp),
+        pickedUpAt: sub.pickedUpAt || parent.pickedUpAt || null,
+        pickedUpBy: sub.pickedUpBy || parent.pickedUpBy || null,
+        rider_name: sub.rider_name || parent.rider_name || null,
+        rider_phone: sub.rider_phone || parent.rider_phone || null,
+        pickup_time: sub.pickup_time || parent.pickup_time || null,
         customerName: parent.customerName || sub.customerName || 'Customer',
         customerPhone: parent.customerPhone || sub.customerPhone || '',
         careCategory: sub.careCategory || parent.careCategory || 'Standard',

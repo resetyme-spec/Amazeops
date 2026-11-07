@@ -174,6 +174,9 @@ export default function Orders() {
    } else if (statusFilter === 'PICKUP_ARRANGED') {
     if (o.status !== 'PICKUP_ARRANGED' && o.pickupStatus !== 'PICKUP_ARRANGED' && !o.pickupArranged) return false;
    } else if (statusFilter === 'COMPLETED') {
+    const isPickup = o.status === 'PICKUP_ARRANGED' || o.pickupStatus === 'PICKUP_ARRANGED' || o.pickupArranged;
+    const isPickUp = o.status === 'PICKED_UP' || o.pickupStatus === 'PICKED_UP' || o.pickedUp;
+    if (isPickup || isPickUp) return false;
     if (o.status !== 'COMPLETED' && o.status !== 'DELIVERED' && o.status !== 'READY_FOR_DELIVERY' && o.qcStatus !== 'QC_APPROVED') return false;
    } else if (statusFilter === 'QC_REJECTED') {
     if (o.status !== 'QC_REJECTED' && o.qcStatus !== 'QC_REJECTED') return false;
@@ -197,7 +200,12 @@ export default function Orders() {
   ASSIGNED: orders.filter(o => o.status === 'ASSIGNED' || o.status === 'RECEIVED').length,
   IN_PROCESS: orders.filter(o => o.status === 'IN_PROCESS').length,
   QC_SENT: orders.filter(o => o.status === 'QC_SENT' || o.qcStatus === 'QC_PENDING').length,
-  COMPLETED: orders.filter(o => o.status === 'COMPLETED' || o.status === 'DELIVERED' || o.status === 'READY_FOR_DELIVERY' || o.qcStatus === 'QC_APPROVED').length,
+  COMPLETED: orders.filter(o => {
+   const isPickup = o.status === 'PICKUP_ARRANGED' || o.pickupStatus === 'PICKUP_ARRANGED' || o.pickupArranged;
+   const isPickUp = o.status === 'PICKED_UP' || o.pickupStatus === 'PICKED_UP' || o.pickedUp;
+   if (isPickup || isPickUp) return false;
+   return o.status === 'COMPLETED' || o.status === 'DELIVERED' || o.status === 'READY_FOR_DELIVERY' || o.qcStatus === 'QC_APPROVED';
+  }).length,
  PICKUP_ARRANGED: orders.filter(o => (o.status === 'PICKUP_ARRANGED' || o.pickupStatus === 'PICKUP_ARRANGED' || o.pickupArranged) && o.status !== 'PICKED_UP' && !o.pickedUp).length,
   PICKED_UP: orders.filter(o => o.status === 'PICKED_UP' || o.pickupStatus === 'PICKED_UP' || o.pickedUp).length,
  };
