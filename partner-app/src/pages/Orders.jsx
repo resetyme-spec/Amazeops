@@ -525,15 +525,6 @@ export default function Orders() {
    onClick={() => setSearchParams(statusFilter === 'QC_APPROVED' ? '' : '?status=QC_APPROVED')}
   />
   <StatCard
-   label="Ready to Deliver"
-   value={stats.READY_FOR_DELIVERY}
-   color="#047857"
-   bg="#ecfdf5"
-   border="#6ee7b7"
-   active={statusFilter === 'READY_FOR_DELIVERY'}
-   onClick={() => setSearchParams(statusFilter === 'READY_FOR_DELIVERY' ? '' : '?status=READY_FOR_DELIVERY')}
-  />
-  <StatCard
    label="QC Rejected"
    value={stats.QC_REJECTED}
    color="#b91c1c"
