@@ -292,22 +292,42 @@ function deriveStatus(order: Order, subs: SubOrder[]): string {
  // If pickup arranged
  if (oStatus === 'PICKUP_ARRANGED' || (order as any).pickupStatus === 'PICKUP_ARRANGED' || (order as any).pickupArranged || (subs.length > 0 && subs.some(s => (s.status || '').toUpperCase() === 'PICKUP_ARRANGED' || (s as any).pickupArranged))) return 'PICKUP_ARRANGED';
 
- // If any sub is QC rejected -> show QC_REJECTED
- if (oStatus === 'QC_REJECTED' || subs.some(s => (s.status || '').toUpperCase() === 'QC_REJECTED')) return 'QC_REJECTED';
- // If any sub is QC pending / QC sent -> show QC_PENDING
- if (oStatus === 'QC_PENDING' || subs.some(s => {
+ // Helper to check if a sub-order is TRULY pending QC
+ const isSubPendingQc = (s: SubOrder) => {
   const st = (s.status || '').toUpperCase();
-  return st === 'QC_PENDING' || st === 'QC_SENT';
- })) return 'QC_PENDING';
+  const qc = (s.qcStatus || '').toUpperCase();
+  if (st !== 'QC_PENDING' && st !== 'QC_SENT' && qc !== 'QC_PENDING' && qc !== 'QC_SENT') return false;
+  if (st === 'COMPLETED' || qc === 'QC_APPROVED') return false;
+  const subGarmentIds: string[] = s.garmentIds || [];
+  const sGarments = (order.garments || []).filter((g: any) =>
+   subGarmentIds.length === 0 || subGarmentIds.includes(g.garmentId || g.garment_id_code)
+  );
+  if (sGarments.length > 0 && sGarments.every((g: any) => g.qcStatus === 'QC_PASSED' || g.status === 'QC_PASSED')) {
+   return false;
+  }
+  return true;
+ };
+
+ const hasTrulyPendingQc = subs.some(isSubPendingQc);
+
  // If all subs completed (or QC approved / ready / delivered) -> show COMPLETED
  if (oStatus === 'COMPLETED' || oStatus === 'DELIVERED' || oStatus === 'READY_FOR_DELIVERY' || oStatus === 'QC_APPROVED' || (subs.length > 0 && subs.every(s => {
   const st = (s.status || '').toUpperCase();
-  return st === 'COMPLETED' || st === 'DELIVERED' || st === 'READY_FOR_DELIVERY' || st === 'QC_APPROVED';
+  const qc = (s.qcStatus || '').toUpperCase();
+  return st === 'COMPLETED' || st === 'DELIVERED' || st === 'READY_FOR_DELIVERY' || st === 'QC_APPROVED' || qc === 'QC_APPROVED';
  }))) return 'COMPLETED';
+
+ // If any sub is QC rejected -> show QC_REJECTED
+ if (oStatus === 'QC_REJECTED' || subs.some(s => (s.status || '').toUpperCase() === 'QC_REJECTED')) return 'QC_REJECTED';
+
+ // If any sub is truly QC pending -> show QC_PENDING
+ if (hasTrulyPendingQc || (oStatus === 'QC_PENDING' && subs.length > 0 && subs.some(isSubPendingQc))) return 'QC_PENDING';
+
  // If any sub is in progress or completed while others pending -> show IN_PROCESS
  if (oStatus === 'IN_PROCESS' || subs.some(s => {
   const st = (s.status || '').toUpperCase();
-  return st === 'IN_PROCESS' || st === 'COMPLETED' || st === 'DELIVERED' || st === 'READY_FOR_DELIVERY' || st === 'QC_APPROVED';
+  const qc = (s.qcStatus || '').toUpperCase();
+  return st === 'IN_PROCESS' || st === 'COMPLETED' || st === 'DELIVERED' || st === 'READY_FOR_DELIVERY' || st === 'QC_APPROVED' || qc === 'QC_APPROVED';
  })) return 'IN_PROCESS';
  // If subs assigned -> show ASSIGNED
  if (subs.some(s => (s.status || '').toUpperCase() === 'ASSIGNED')) return 'ASSIGNED';

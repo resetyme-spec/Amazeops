@@ -365,13 +365,14 @@ const REJECTION_REASONS = [
 
     try {
       // 1. Update parent order's garments array
-      let allPassed = false;
+      let allOrderPassed = false;
+      let orderGarments: any[] = [];
       try {
         const orderRef = doc(db, 'orders', item.orderId);
         const orderSnap = await getDoc(orderRef);
         if (orderSnap.exists()) {
           const oData = orderSnap.data();
-          const updatedGarments = (oData.garments || []).map((gm: any) => {
+          orderGarments = (oData.garments || []).map((gm: any) => {
             if (gm.garmentId === garmentId) {
               const clone = { ...gm, status: 'QC_PASSED', qcStatus: 'QC_PASSED' };
               delete clone.qcRejection;
@@ -380,11 +381,11 @@ const REJECTION_REASONS = [
             return gm;
           });
 
-          allPassed = updatedGarments.length > 0 && updatedGarments.every((gm: any) => gm.qcStatus === 'QC_PASSED' || gm.status === 'QC_PASSED');
-          const hasAnyRejected = updatedGarments.some((gm: any) => gm.qcStatus === 'QC_REJECTED' || !!gm.qcRejection);
+          allOrderPassed = orderGarments.length > 0 && orderGarments.every((gm: any) => gm.qcStatus === 'QC_PASSED' || gm.status === 'QC_PASSED');
+          const hasAnyRejected = orderGarments.some((gm: any) => gm.qcStatus === 'QC_REJECTED' || !!gm.qcRejection);
 
-          const updatePayload: any = { garments: updatedGarments };
-          if (allPassed && !hasAnyRejected) {
+          const updatePayload: any = { garments: orderGarments };
+          if (allOrderPassed && !hasAnyRejected) {
             updatePayload.status = 'COMPLETED';
             updatePayload.qcStatus = 'QC_APPROVED';
             updatePayload.approvedAt = nowIso;
@@ -396,7 +397,15 @@ const REJECTION_REASONS = [
         console.warn('Error updating order garments:', e);
       }
 
-      // 2. Update qcRecords doc
+      // 2. Check if all garments for THIS sub-order / QC item are passed
+      const itemGarments = item.garments || [];
+      const isSubOrderComplete = itemGarments.length > 0 && itemGarments.every(g => {
+        if (g.garmentId === garmentId) return true;
+        const found = orderGarments.find((og: any) => og.garmentId === g.garmentId);
+        return found ? (found.qcStatus === 'QC_PASSED' || found.status === 'QC_PASSED') : (g.status === 'QC_PASSED');
+      });
+
+      // 3. Update qcRecords doc
       const qcRef = doc(db, 'qcRecords', item.id);
       const updatedRejected = { ...(item.rejectedGarments || {}) };
       delete updatedRejected[garmentId];
@@ -405,14 +414,14 @@ const REJECTION_REASONS = [
         rejectedGarments: updatedRejected,
         updatedAt: nowIso,
       };
-      if (allPassed) {
+      if (isSubOrderComplete) {
         qcUpdatePayload.status = 'QC_APPROVED';
         qcUpdatePayload.approvedAt = nowIso;
         qcUpdatePayload.approvedBy = actorName;
       }
       await updateDoc(qcRef, qcUpdatePayload);
 
-      // 3. Update subOrders doc
+      // 4. Update subOrders doc
       try {
         const subSnap = await getDocs(collection(db, 'subOrders'));
         const targetSub = subSnap.docs.find(d => {
@@ -420,7 +429,7 @@ const REJECTION_REASONS = [
           return (d.id === item.subOrderId || d.id === item.orderId || dData.orderId === item.orderId) &&
             (dData.garmentIds || []).includes(garmentId);
         });
-        if (targetSub && allPassed) {
+        if (targetSub && isSubOrderComplete) {
           await updateDoc(targetSub.ref, {
             status: 'COMPLETED',
             qcStatus: 'QC_APPROVED',
@@ -431,6 +440,35 @@ const REJECTION_REASONS = [
         }
       } catch (e) {
         console.warn('Error updating subOrder:', e);
+      }
+
+      // 5. Recalculate parent order status if not all passed
+      if (!allOrderPassed) {
+        try {
+          const subSnap = await getDocs(collection(db, 'subOrders'));
+          const orderSubs = subSnap.docs
+            .filter(d => d.data().orderId === item.orderId || d.data().mainOrderNumber === item.orderNumber)
+            .map(d => ({ id: d.id, ...d.data() }));
+
+          if (orderSubs.length > 0) {
+            const statuses = orderSubs.map((s: any) => (s.id === item.subOrderId && isSubOrderComplete) ? 'COMPLETED' : String(s.status || '').toUpperCase());
+            const hasQcPending = statuses.some(st => st === 'QC_PENDING' || st === 'QC_SENT');
+            const hasQcRejected = statuses.some(st => st === 'QC_REJECTED');
+            const allSubsComplete = statuses.every(st => ['COMPLETED', 'QC_APPROVED'].includes(st));
+
+            let newOverallStatus = 'IN_PROCESS';
+            if (allSubsComplete) newOverallStatus = 'COMPLETED';
+            else if (hasQcRejected) newOverallStatus = 'QC_REJECTED';
+            else if (hasQcPending) newOverallStatus = 'QC_PENDING';
+            else if (statuses.every(st => st === 'ASSIGNED')) newOverallStatus = 'ASSIGNED';
+
+            const parentUpdate: any = { status: newOverallStatus };
+            if (!hasQcPending) parentUpdate.qcStatus = null;
+            await updateDoc(doc(db, 'orders', item.orderId), parentUpdate);
+          }
+        } catch (e) {
+          console.warn('Error recalculating parent order status:', e);
+        }
       }
 
       setViewQcModal({ open: false, item: null, garment: null, update: null, rejection: null, isRejected: false, isPassed: false, isPending: false });
